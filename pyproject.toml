@@ -7,10 +7,24 @@ name = "shhhhhh"
 version = "0.1.0"
 description = "Silence your Mac, app by app"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Alex Priest" },
+]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Utilities",
+]
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/alexpriest/shhhhhh"
+Repository = "https://github.com/alexpriest/shhhhhh"
 
 [project.scripts]
 shh = "shhhhhh.cli:main"

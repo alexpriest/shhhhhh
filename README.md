@@ -7,6 +7,12 @@ A CLI tool for batch-managing macOS notification settings — toggle sound and b
 ## Install
 
 ```bash
+brew install alexpriest/tap/shh
+```
+
+Or with pip:
+
+```bash
 pip install shhhhhh
 ```
 
