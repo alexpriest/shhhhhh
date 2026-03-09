@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 
@@ -10,6 +11,27 @@ PLIST_PATH = Path.home() / "Library/Group Containers/group.com.apple.usernoted/L
 SYSTEM_CENTER = "_SYSTEM_CENTER_:"
 SOUND_BIT = 2   # bit position
 BADGES_BIT = 1  # bit position
+
+# Bundle IDs where the auto-extracted name would be wrong or unclear
+FRIENDLY_NAMES: dict[str, str] = {
+    "com.apple.iChat": "Messages",
+    "com.apple.Passbook": "Wallet",
+    "com.apple.BTNotificationAgent": "Bluetooth",
+    "com.apple.BTUserNotifications": "Bluetooth Notifications",
+    "com.apple.MobileSMS": "Messages",
+    "com.apple.iCal": "Calendar",
+    "com.apple.mdmclient.usernotifications.v2": "MDM Client",
+    "com.apple.appfirewall.agent": "App Firewall",
+    "com.apple.identityservicesd.firewall": "Identity Services Firewall",
+    "com.apple.iBird.usernotification": "Game Center",
+    "com.apple.PlatformSSO.notifications": "Platform SSO",
+}
+
+# Suffixes to strip when auto-extracting names from bundle IDs
+_STRIP_SUFFIXES = [
+    ".notifications", ".usernotification", ".usernotifications",
+    ".agent", ".engagement",
+]
 
 
 @dataclass
@@ -32,12 +54,37 @@ def has_flag(flags: int, bit: int) -> bool:
     return bool(flags & (1 << bit))
 
 
+def _humanize_bundle_id(bundle_id: str) -> str:
+    """Turn a bundle ID into a human-readable name.
+
+    Extracts the last component, strips known suffixes, and inserts
+    spaces before capital letters (e.g. FamilyNotifications → Family Notifications).
+    """
+    # Take the last dotted component
+    name = bundle_id.rsplit(".", 1)[-1]
+    # Strip known suffixes (case-insensitive check on the lowered tail)
+    for suffix in _STRIP_SUFFIXES:
+        if name.lower().endswith(suffix.lstrip(".").lower()):
+            name = name[: len(name) - len(suffix.lstrip("."))]
+            break
+    # Insert spaces before uppercase runs: "AppStore" → "App Store"
+    name = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name)
+    # Also split acronym boundaries: "BTUser" → "BT User"
+    name = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", name)
+    return name
+
+
 def _resolve_name(app: dict) -> str:
     """Extract a friendly app name from the plist entry."""
+    bundle_id = app.get("bundle-id", "")
     path = app.get("path", "")
     if path and path.endswith(".app"):
         return Path(path).stem
-    return app["bundle-id"]
+    if bundle_id in FRIENDLY_NAMES:
+        return FRIENDLY_NAMES[bundle_id]
+    if bundle_id.startswith("com.apple."):
+        return _humanize_bundle_id(bundle_id)
+    return bundle_id
 
 
 def read_apps(plist_path: Path | None = None) -> list[AppInfo]:
