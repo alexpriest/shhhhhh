@@ -3,10 +3,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from rich.console import Console
-from rich.text import Text
-
-console = Console()
+from shhhhhh.display import console, GRAYS
 
 SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 
@@ -22,15 +19,6 @@ TERMINAL_NAMES = {
     "tmux": "tmux",
 }
 
-GRAYS = [
-    "color(250)",
-    "color(248)",
-    "color(245)",
-    "color(243)",
-    "color(240)",
-    "color(238)",
-]
-
 
 def detect_terminal() -> str:
     """Detect the user's terminal app from environment."""
@@ -38,12 +26,12 @@ def detect_terminal() -> str:
     return TERMINAL_NAMES.get(term.lower(), "your terminal")
 
 
-def check_access(plist_path: Path) -> bool | None:
-    """Check if the plist is readable. Returns None on success, False on failure."""
+def check_access(plist_path: Path) -> bool:
+    """Check if the plist is readable. Returns True on success, False on failure."""
     try:
         with open(plist_path, "rb") as f:
             f.read(1)
-        return None
+        return True
     except (PermissionError, FileNotFoundError):
         _print_permission_guide()
         return False

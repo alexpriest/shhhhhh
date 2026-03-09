@@ -22,6 +22,24 @@ SAMPLE_APPS = [
 ]
 
 
+def test_permission_error_shows_guidance(tmp_path):
+    """Permission error shows friendly message instead of traceback."""
+    plist = tmp_path / "test.plist"
+    plist.write_bytes(b"test")
+    plist.chmod(0o000)
+    runner = CliRunner()
+    try:
+        with patch("shhhhhh.cli.PLIST_PATH", plist), \
+             patch("shhhhhh.cli.prompt_open_settings") as mock_prompt:
+            result = runner.invoke(main, ["list"])
+        assert result.exit_code == 0
+        assert "Full Disk Access" in result.output
+        assert "Traceback" not in result.output
+        mock_prompt.assert_called_once()
+    finally:
+        plist.chmod(0o644)
+
+
 def test_list_shows_apps(tmp_path):
     plist = _make_plist(SAMPLE_APPS, tmp_path)
     runner = CliRunner()

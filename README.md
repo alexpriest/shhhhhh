@@ -10,6 +10,16 @@ A CLI tool for batch-managing macOS notification settings — toggle sound and b
 pip install shhhhhh
 ```
 
+## Setup
+
+`shh` needs **Full Disk Access** to manage notification settings.
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**
+2. Enable your terminal app (Terminal, iTerm2, Ghostty, etc.)
+3. Restart your terminal
+
+If you skip this step, `shh` will guide you through it on first run.
+
 ## Usage
 
 ```bash

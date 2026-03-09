@@ -14,6 +14,7 @@ from shhhhhh.plist import (
     get_latest_backup,
     restore_backup,
 )
+from shhhhhh.permissions import check_access, prompt_open_settings
 from shhhhhh.display import (
     print_logo,
     print_tagline,
@@ -42,10 +43,14 @@ def _match_apps(apps, names):
     return list({a.index: a for a in matched}.values())  # dedupe by index
 
 
-@click.group()
-def main():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def main(ctx):
     """shh — silence your mac, app by app."""
-    pass
+    if ctx.invoked_subcommand is not None:
+        if not check_access(PLIST_PATH):
+            prompt_open_settings()
+            ctx.exit(0)
 
 
 @main.command("list")

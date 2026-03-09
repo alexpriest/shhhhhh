@@ -29,7 +29,7 @@ def test_check_access_succeeds(tmp_path):
     """No exception when file is readable."""
     plist = tmp_path / "test.plist"
     plist.write_bytes(b"test")
-    check_access(plist)  # should not raise
+    assert check_access(plist) is True
 
 
 def test_check_access_permission_error(tmp_path):
