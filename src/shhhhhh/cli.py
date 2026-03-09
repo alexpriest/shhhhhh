@@ -51,6 +51,22 @@ def main(ctx):
         if not check_access(PLIST_PATH):
             prompt_open_settings()
             ctx.exit(0)
+    elif ctx.invoked_subcommand is None:
+        if not check_access(PLIST_PATH):
+            prompt_open_settings()
+            ctx.exit(0)
+            return
+        apps = read_apps(PLIST_PATH)
+        from shhhhhh.interactive import ShhApp
+        shh_app = ShhApp(apps, PLIST_PATH, BACKUP_DIR)
+        shh_app.run()
+        if shh_app.applied:
+            print_logo()
+            changes = len([
+                a for a in apps
+                if shh_app.original[a.index] != shh_app.staged[a.index]
+            ])
+            print_result(f"Applied {changes} change{'s' if changes != 1 else ''}", "shh undo")
 
 
 @main.command("list")
