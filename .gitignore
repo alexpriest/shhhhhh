@@ -6,3 +6,4 @@ build/
 .eggs/
 *.pyc
 .venv/
+homebrew-tap/
