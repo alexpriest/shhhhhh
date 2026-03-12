@@ -112,3 +112,104 @@ def test_undo_restores_backup(tmp_path):
     with open(plist, "rb") as f:
         data = plistlib.load(f)
     assert data["apps"][1]["flags"] == 0b00000110  # Linear restored
+
+
+def test_list_grouped_by_default(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        result = runner.invoke(main, ["list"])
+    assert result.exit_code == 0
+    # Category headers should appear (Slack=Messaging, Linear=Work)
+    assert "MESSAGING" in result.output
+    assert "WORK" in result.output
+
+
+def test_list_flat_flag(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        result = runner.invoke(main, ["list", "--flat"])
+    assert result.exit_code == 0
+    assert "Slack" in result.output
+    # Flat mode should NOT show category headers
+    assert "MESSAGING" not in result.output
+
+
+def test_sound_off_by_category(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    backup_dir = tmp_path / ".shh"
+    with patch("shhhhhh.cli.PLIST_PATH", plist), \
+         patch("shhhhhh.cli.BACKUP_DIR", backup_dir), \
+         patch("shhhhhh.plist.subprocess"):
+        result = runner.invoke(main, ["sound", "off", "--category", "work", "--yes"])
+    assert result.exit_code == 0
+    with open(plist, "rb") as f:
+        data = plistlib.load(f)
+    # Linear (Work) should have sound off
+    assert data["apps"][1]["flags"] & 0b100 == 0
+    # Slack (Messaging) should be unchanged
+    assert data["apps"][0]["flags"] == 0b00000010
+
+
+def test_sound_off_unknown_category(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        result = runner.invoke(main, ["sound", "off", "--category", "nonexistent"])
+    assert result.exit_code == 0
+    assert "No apps in category" in result.output
+
+
+def test_category_list(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        result = runner.invoke(main, ["category", "list"])
+    assert result.exit_code == 0
+    assert "Messaging" in result.output
+    assert "Work" in result.output
+
+
+def test_category_mute(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    backup_dir = tmp_path / ".shh"
+    with patch("shhhhhh.cli.PLIST_PATH", plist), \
+         patch("shhhhhh.cli.BACKUP_DIR", backup_dir), \
+         patch("shhhhhh.plist.subprocess"):
+        result = runner.invoke(main, ["category", "mute", "work", "--yes"])
+    assert result.exit_code == 0
+    with open(plist, "rb") as f:
+        data = plistlib.load(f)
+    # Linear (Work, index 1) should have sound off
+    assert data["apps"][1]["flags"] & 0b100 == 0
+    assert data["apps"][1]["flags"] & 0b010 == 0b010  # badges preserved
+
+
+def test_category_unmute(tmp_path):
+    # First mute, then unmute
+    apps = [
+        {"bundle-id": "com.tinyspeck.slackmacgap", "flags": 0b00000010, "path": "/Applications/Slack.app"},  # sound OFF
+    ]
+    plist = _make_plist(apps, tmp_path)
+    runner = CliRunner()
+    backup_dir = tmp_path / ".shh"
+    with patch("shhhhhh.cli.PLIST_PATH", plist), \
+         patch("shhhhhh.cli.BACKUP_DIR", backup_dir), \
+         patch("shhhhhh.plist.subprocess"):
+        result = runner.invoke(main, ["category", "unmute", "messaging", "--yes"])
+    assert result.exit_code == 0
+    with open(plist, "rb") as f:
+        data = plistlib.load(f)
+    assert data["apps"][0]["flags"] & 0b100 == 0b100  # sound now ON
+
+
+def test_category_mute_unknown(tmp_path):
+    plist = _make_plist(SAMPLE_APPS, tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        result = runner.invoke(main, ["category", "mute", "nonexistent"])
+    assert result.exit_code == 0
+    assert "No apps in category" in result.output
