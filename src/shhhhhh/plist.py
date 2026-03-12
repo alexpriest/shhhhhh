@@ -6,6 +6,8 @@ import plistlib
 import shutil
 import subprocess
 
+from shhhhhh.categories import resolve_category
+
 PLIST_PATH = Path.home() / "Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 SYSTEM_CENTER = "_SYSTEM_CENTER_:"
 SOUND_BIT = 2   # bit position
@@ -18,6 +20,8 @@ class AppInfo:
     bundle_id: str
     flags: int
     index: int  # position in the plist apps array
+    app_path: str = ""
+    category: str = "Other"
 
     @property
     def sound(self) -> bool:
@@ -51,11 +55,14 @@ def read_apps(plist_path: Path | None = None) -> list[AppInfo]:
         bundle_id = entry.get("bundle-id", "")
         if bundle_id.startswith(SYSTEM_CENTER):
             continue
+        app_path = entry.get("path", "")
         apps.append(AppInfo(
             name=_resolve_name(entry),
             bundle_id=bundle_id,
             flags=entry.get("flags", 0),
             index=i,
+            app_path=app_path,
+            category=resolve_category(bundle_id, app_path),
         ))
 
     apps.sort(key=lambda a: a.name.lower())

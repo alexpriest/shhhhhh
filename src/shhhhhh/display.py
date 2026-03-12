@@ -74,6 +74,67 @@ def print_app_table(apps: list[AppInfo]):
     console.print(table)
 
 
+def print_grouped_table(groups: dict[str, list[AppInfo]]):
+    """Print apps grouped by category with styled headers."""
+    table = Table(
+        show_header=True,
+        header_style="bold color(250)",
+        box=None,
+        padding=(0, 2),
+        pad_edge=True,
+    )
+    table.add_column("App", style="color(250)", min_width=28)
+    table.add_column("Sound", justify="center", min_width=7)
+    table.add_column("Badges", justify="center", min_width=7)
+
+    first = True
+    for category, apps in groups.items():
+        if not first:
+            table.add_row("", "", "")  # spacer
+        first = False
+        table.add_row(
+            Text(category.upper(), style="bold color(245)"),
+            Text(""),
+            Text(""),
+        )
+        for app in apps:
+            sound = Text("✓", style="green") if app.sound else Text("✗", style="color(240)")
+            badges = Text("✓", style="green") if app.badges else Text("✗", style="color(240)")
+            table.add_row(f"  {app.name}", sound, badges)
+
+    console.print()
+    console.print(table)
+
+
+def print_category_summary(groups: dict[str, list[AppInfo]]):
+    """Print category overview: name, app count, sound/badge status."""
+    table = Table(
+        show_header=True,
+        header_style="bold color(250)",
+        box=None,
+        padding=(0, 2),
+        pad_edge=True,
+    )
+    table.add_column("Category", style="color(250)", min_width=14)
+    table.add_column("Apps", justify="right", min_width=5)
+    table.add_column("Sound On", justify="right", min_width=9)
+    table.add_column("Badges On", justify="right", min_width=10)
+
+    for category, apps in groups.items():
+        count = len(apps)
+        sound_on = sum(1 for a in apps if a.sound)
+        badges_on = sum(1 for a in apps if a.badges)
+        table.add_row(
+            category,
+            str(count),
+            f"{sound_on}/{count}",
+            f"{badges_on}/{count}",
+        )
+
+    console.print()
+    console.print(table)
+
+
 def print_result(message: str, undo_hint: str | None = None):
     """Print a result message after a change."""
     console.print()
