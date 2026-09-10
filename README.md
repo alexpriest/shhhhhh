@@ -1,6 +1,14 @@
 # shh
 
-Silence your Mac, app by app.
+Silences your Mac app by app: a terminal screen for every notification setting, with undo.
+
+## Status
+
+Shipped — on Homebrew and PyPI.
+
+## License
+
+Not licensed for reuse.
 
 A CLI tool for batch-managing macOS notification settings — an interactive screen to arrow through every app and toggle it, plus one-line commands for on/off, alert style, sound, and badges.
 
