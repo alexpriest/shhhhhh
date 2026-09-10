@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "shhhhhh"
-version = "0.1.1"
+version = "0.2.0"
 description = "Silence your Mac, app by app"
 requires-python = ">=3.11"
 license = "MIT"

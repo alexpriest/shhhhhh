@@ -5,6 +5,18 @@ from rich.text import Text
 
 from shhhhhh.plist import AppInfo
 
+
+def _on(app: AppInfo) -> Text:
+    return Text("●", style="green") if app.allowed else Text("○", style="color(240)")
+
+
+def _style(app: AppInfo) -> Text:
+    return Text(app.style, style="color(250)" if app.style != "off" else "color(240)")
+
+
+def _check(enabled: bool) -> Text:
+    return Text("✓", style="green") if enabled else Text("✗", style="color(240)")
+
 console = Console()
 
 LOGO_LINES = [
@@ -45,9 +57,10 @@ def print_summary(apps: list[AppInfo]):
     total = len(apps)
     with_sound = sum(1 for a in apps if a.sound)
     with_badges = sum(1 for a in apps if a.badges)
+    allowed = sum(1 for a in apps if a.allowed)
     console.print()
     console.print(
-        f"  {total} apps · {with_sound} with sound · {with_badges} with badges",
+        f"  {total} apps · {allowed} on · {with_sound} with sound · {with_badges} with badges",
         style="color(245)",
     )
 
@@ -62,13 +75,13 @@ def print_app_table(apps: list[AppInfo]):
         pad_edge=True,
     )
     table.add_column("App", style="color(250)", min_width=28)
-    table.add_column("Sound", justify="center", min_width=7)
+    table.add_column("On", justify="center", min_width=4)
+    table.add_column("Style", min_width=10)
     table.add_column("Badges", justify="center", min_width=7)
+    table.add_column("Sound", justify="center", min_width=7)
 
     for app in apps:
-        sound = Text("✓", style="green") if app.sound else Text("✗", style="color(240)")
-        badges = Text("✓", style="green") if app.badges else Text("✗", style="color(240)")
-        table.add_row(app.name, sound, badges)
+        table.add_row(app.name, _on(app), _style(app), _check(app.badges), _check(app.sound))
 
     console.print()
     console.print(table)
@@ -84,23 +97,19 @@ def print_grouped_table(groups: dict[str, list[AppInfo]]):
         pad_edge=True,
     )
     table.add_column("App", style="color(250)", min_width=28)
-    table.add_column("Sound", justify="center", min_width=7)
+    table.add_column("On", justify="center", min_width=4)
+    table.add_column("Style", min_width=10)
     table.add_column("Badges", justify="center", min_width=7)
+    table.add_column("Sound", justify="center", min_width=7)
 
     first = True
     for category, apps in groups.items():
         if not first:
-            table.add_row("", "", "")  # spacer
+            table.add_row("", "", "", "", "")  # spacer
         first = False
-        table.add_row(
-            Text(category.upper(), style="bold color(245)"),
-            Text(""),
-            Text(""),
-        )
+        table.add_row(Text(category.upper(), style="bold color(245)"), Text(""), Text(""), Text(""), Text(""))
         for app in apps:
-            sound = Text("✓", style="green") if app.sound else Text("✗", style="color(240)")
-            badges = Text("✓", style="green") if app.badges else Text("✗", style="color(240)")
-            table.add_row(f"  {app.name}", sound, badges)
+            table.add_row(f"  {app.name}", _on(app), _style(app), _check(app.badges), _check(app.sound))
 
     console.print()
     console.print(table)

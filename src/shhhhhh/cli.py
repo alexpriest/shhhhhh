@@ -8,8 +8,11 @@ from shhhhhh.plist import (
     PLIST_PATH as _PLIST_PATH,
     SOUND_BIT,
     BADGES_BIT,
+    ALLOW_BIT,
+    STYLES,
     read_apps,
     set_flag,
+    set_style,
     write_apps,
     backup_plist,
     get_latest_backup,
@@ -34,6 +37,7 @@ BACKUP_DIR = Path.home() / ".shh"
 BIT_MAP = {
     "sound": SOUND_BIT,
     "badges": BADGES_BIT,
+    "allow": ALLOW_BIT,
 }
 
 
@@ -51,10 +55,7 @@ def _apply_toggle(targets, bit, enabled, setting, confirm_all=False, yes=False):
     action = "Enabled" if enabled else "Disabled"
 
     # Filter to apps that would actually change
-    if bit == SOUND_BIT:
-        changes = [a for a in targets if a.sound != enabled]
-    else:
-        changes = [a for a in targets if a.badges != enabled]
+    changes = [a for a in targets if bool(a.flags & (1 << bit)) != enabled]
 
     if not changes:
         print_logo()
@@ -76,11 +77,13 @@ def _apply_toggle(targets, bit, enabled, setting, confirm_all=False, yes=False):
         msg = f"Muted {len(changes)} apps"
     elif setting == "sound" and enabled:
         msg = f"Unmuted {len(changes)} apps"
+    elif setting == "allow":
+        msg = f"Notifications {'on' if enabled else 'off'} for {len(changes)} apps"
     else:
         msg = f"{action} {setting} for {len(changes)} apps"
 
     print_logo()
-    print_result(msg)
+    print_result(msg, "shh undo")
 
 
 @click.group(invoke_without_command=True)
@@ -170,6 +173,46 @@ def _toggle_command(setting: str):
 
 main.add_command(_toggle_command("sound"))
 main.add_command(_toggle_command("badges"))
+main.add_command(_toggle_command("allow"))
+
+
+@main.command("style")
+@click.argument("style", type=click.Choice(STYLES))
+@click.argument("apps", nargs=-1)
+@click.option("--all", "all_apps", is_flag=True, help="Apply to all apps")
+@click.option("--category", "category_name", default=None, help="Apply to all apps in a category")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def style_cmd(style, apps, all_apps, category_name, yes):
+    """Set the alert style: temporary (banner), persistent (stays), or off."""
+    app_list = read_apps(PLIST_PATH)
+    if all_apps:
+        targets = app_list
+    elif category_name:
+        targets = [a for a in app_list if a.category.lower() == category_name.lower()]
+    elif apps:
+        targets = _match_apps(app_list, apps)
+    else:
+        raise click.UsageError("Specify app names, --category, or --all")
+
+    if not targets:
+        console.print()
+        console.print("  No apps matched", style="color(243)")
+        console.print()
+        return
+
+    changes = [a for a in targets if a.style != style]
+    if not changes:
+        print_logo()
+        print_result(f"All {len(targets)} apps already {style}")
+        return
+
+    if (all_apps or category_name) and not yes:
+        click.confirm(f"  Set alert style to {style} for {len(changes)} apps?", abort=True)
+
+    backup_plist(PLIST_PATH, BACKUP_DIR)
+    write_apps(PLIST_PATH, {a.index: set_style(a.flags, style) for a in changes})
+    print_logo()
+    print_result(f"Set {len(changes)} apps to {style}", "shh undo")
 
 
 @main.group()

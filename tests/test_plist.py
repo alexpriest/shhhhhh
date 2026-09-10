@@ -126,3 +126,49 @@ def test_non_apple_bundle_id_unchanged(tmp_path):
     ], tmp_path)
     apps = read_apps(plist)
     assert apps[0].name == "com.example.nopath"
+
+
+# --- allow / alert style (verified against System Settings on macOS 26, 2026-09-10) ---
+import pytest
+from shhhhhh.plist import ALLOW_BIT, TEMPORARY_BIT, PERSISTENT_BIT, set_style
+
+CLAUDE_FLAGS = 310386698      # bits 1,3,13,23,25,28 -> "Badges, Desktop", Temporary
+CLEANSHOT_FLAGS = 276832266   # same minus bit 25 -> "Off"
+APPSTORE_FLAGS = 1946222618   # bits 1,4,19,23,25,28,29,30 -> Persistent
+
+
+def test_allowed_is_bit_25():
+    assert ALLOW_BIT == 25
+    assert AppInfo("Claude", "c", CLAUDE_FLAGS, 0).allowed is True
+    assert AppInfo("CleanShot", "c", CLEANSHOT_FLAGS, 0).allowed is False
+
+
+def test_style_temporary_persistent_off():
+    assert (TEMPORARY_BIT, PERSISTENT_BIT) == (3, 4)
+    assert AppInfo("Claude", "c", CLAUDE_FLAGS, 0).style == "temporary"
+    assert AppInfo("App Store", "a", APPSTORE_FLAGS, 0).style == "persistent"
+    assert AppInfo("Off", "o", CLAUDE_FLAGS & ~(1 << 3), 0).style == "off"
+
+
+def test_style_survives_allow_off():
+    """Turning notifications off leaves the style bits alone, like System Settings does."""
+    assert AppInfo("CleanShot", "c", CLEANSHOT_FLAGS, 0).style == "temporary"
+
+
+def test_set_style_clears_both_then_sets_one():
+    assert set_style(CLAUDE_FLAGS, "persistent") == (CLAUDE_FLAGS & ~(1 << 3)) | (1 << 4)
+    assert set_style(APPSTORE_FLAGS, "temporary") == (APPSTORE_FLAGS & ~(1 << 4)) | (1 << 3)
+    off = set_style(CLAUDE_FLAGS, "off")
+    assert off & 0b11000 == 0
+    assert off | 0b11000 == CLAUDE_FLAGS | 0b11000  # nothing else touched
+
+
+def test_set_style_rejects_unknown():
+    with pytest.raises(ValueError):
+        set_style(CLAUDE_FLAGS, "loud")
+
+
+def test_humanize_does_not_return_empty_for_bare_suffix_component():
+    from shhhhhh.plist import _humanize_bundle_id
+    assert _humanize_bundle_id("com.apple.ecosystem.notifications") == "ecosystem"
+    assert _humanize_bundle_id("com.apple.ScreenTimeEnabledNotifications") == "Screen Time Enabled"

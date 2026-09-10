@@ -213,3 +213,56 @@ def test_category_mute_unknown(tmp_path):
         result = runner.invoke(main, ["category", "mute", "nonexistent"])
     assert result.exit_code == 0
     assert "No apps in category" in result.output
+
+
+# --- allow / style (added 2026-09-10) ---
+from shhhhhh.plist import ALLOW_BIT, style_of
+
+ON = 1 << ALLOW_BIT
+STYLE_APPS = [
+    {"bundle-id": "com.tinyspeck.slackmacgap", "flags": ON | 0b1010, "path": "/Applications/Slack.app"},
+    {"bundle-id": "com.linear", "flags": ON | 0b1110, "path": "/Applications/Linear.app"},
+]
+
+
+def _invoke(tmp_path, args):
+    plist = _make_plist(STYLE_APPS, tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist), \
+         patch("shhhhhh.cli.BACKUP_DIR", tmp_path / ".shh"), \
+         patch("shhhhhh.plist.subprocess"):
+        result = runner.invoke(main, args)
+    with open(plist, "rb") as f:
+        return result, plistlib.load(f)["apps"]
+
+
+def test_allow_off_specific_app(tmp_path):
+    result, apps = _invoke(tmp_path, ["allow", "off", "Slack"])
+    assert result.exit_code == 0, result.output
+    assert apps[0]["flags"] & ON == 0
+    assert apps[0]["flags"] & 0b1010 == 0b1010   # style + badge untouched
+    assert apps[1]["flags"] & ON
+
+
+def test_style_persistent_specific_app(tmp_path):
+    result, apps = _invoke(tmp_path, ["style", "persistent", "Linear"])
+    assert result.exit_code == 0, result.output
+    assert style_of(apps[1]["flags"]) == "persistent"
+    assert style_of(apps[0]["flags"]) == "temporary"
+
+
+def test_style_off_all(tmp_path):
+    result, apps = _invoke(tmp_path, ["style", "off", "--all", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert all(style_of(a["flags"]) == "off" for a in apps)
+
+
+def test_style_rejects_unknown(tmp_path):
+    result, _ = _invoke(tmp_path, ["style", "loud", "Linear"])
+    assert result.exit_code != 0
+
+
+def test_list_shows_on_and_style_columns(tmp_path):
+    result, _ = _invoke(tmp_path, ["list", "--flat"])
+    assert "Style" in result.output
+    assert "temporary" in result.output

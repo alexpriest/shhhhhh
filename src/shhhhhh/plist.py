@@ -11,8 +11,17 @@ from shhhhhh.categories import resolve_category
 
 PLIST_PATH = Path.home() / "Library/Group Containers/group.com.apple.usernoted/Library/Preferences/group.com.apple.usernoted.plist"
 SYSTEM_CENTER = "_SYSTEM_CENTER_:"
-SOUND_BIT = 2   # bit position
-BADGES_BIT = 1  # bit position
+# Bit positions in each app's ``flags`` mask. Verified against System Settings
+# on macOS 26 (2026-09-10): Claude vs CleanShot X differ only in bit 25 and read
+# "Badges, Desktop" vs "Off"; Bartleby (bit 3) reads Temporary; App Store (bit 4)
+# still counts as Desktop. Bits 12/13 (lock screen, Notification Center) are
+# documented but unverified here, so nothing writes them.
+BADGES_BIT = 1
+SOUND_BIT = 2
+TEMPORARY_BIT = 3    # Alert style: Temporary (a banner that goes away)
+PERSISTENT_BIT = 4   # Alert style: Persistent (stays until dismissed)
+ALLOW_BIT = 25       # Allow notifications
+STYLES = ("off", "temporary", "persistent")
 
 # Bundle IDs where the auto-extracted name would be wrong or unclear
 FRIENDLY_NAMES: dict[str, str] = {
@@ -53,6 +62,14 @@ class AppInfo:
     def badges(self) -> bool:
         return has_flag(self.flags, BADGES_BIT)
 
+    @property
+    def allowed(self) -> bool:
+        return has_flag(self.flags, ALLOW_BIT)
+
+    @property
+    def style(self) -> str:
+        return style_of(self.flags)
+
 
 def has_flag(flags: int, bit: int) -> bool:
     return bool(flags & (1 << bit))
@@ -64,8 +81,13 @@ def _humanize_bundle_id(bundle_id: str) -> str:
     Extracts the last component, strips known suffixes, and inserts
     spaces before capital letters (e.g. FamilyNotifications → Family Notifications).
     """
-    # Take the last dotted component
-    name = bundle_id.rsplit(".", 1)[-1]
+    # Take the last dotted component that is not itself just a suffix
+    # ("com.apple.ecosystem.notifications" -> "ecosystem", not "").
+    parts = bundle_id.split(".")
+    bare = {suffix.lstrip(".").lower() for suffix in _STRIP_SUFFIXES}
+    while len(parts) > 1 and parts[-1].lower() in bare:
+        parts.pop()
+    name = parts[-1]
     # Strip known suffixes (case-insensitive check on the lowered tail)
     for suffix in _STRIP_SUFFIXES:
         if name.lower().endswith(suffix.lstrip(".").lower()):
@@ -114,6 +136,27 @@ def read_apps(plist_path: Path | None = None) -> list[AppInfo]:
 
     apps.sort(key=lambda a: a.name.lower())
     return apps
+
+
+def style_of(flags: int) -> str:
+    """Alert style encoded in the flags: off, temporary, or persistent."""
+    if has_flag(flags, PERSISTENT_BIT):
+        return "persistent"
+    if has_flag(flags, TEMPORARY_BIT):
+        return "temporary"
+    return "off"
+
+
+def set_style(flags: int, style: str) -> int:
+    """Clear both style bits, then set the one that matches ``style``."""
+    if style not in STYLES:
+        raise ValueError(f"unknown alert style {style!r}; expected one of {STYLES}")
+    flags &= ~((1 << TEMPORARY_BIT) | (1 << PERSISTENT_BIT))
+    if style == "temporary":
+        flags |= 1 << TEMPORARY_BIT
+    elif style == "persistent":
+        flags |= 1 << PERSISTENT_BIT
+    return flags
 
 
 def set_flag(flags: int, bit: int, enabled: bool) -> int:
