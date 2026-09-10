@@ -228,6 +228,54 @@ main.add_command(_shown_command("center", "in Notification Center", lambda a: a.
 main.add_command(_shown_command("lockscreen", "on the Lock Screen", lambda a: a.lock_screen, set_lock_screen))
 
 
+@main.command("uninstall")
+@click.argument("app")
+@click.option("--dry-run", is_flag=True, help="List what would be trashed and stop")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def uninstall_cmd(app, dry_run, yes):
+    """Move an app and its Library leftovers to the Trash, and forget its notifications."""
+    from shhhhhh.uninstall import execute, human_size, plan_uninstall, remove_from_plist
+
+    matches = _match_apps(read_apps(PLIST_PATH), [app])
+    exact = [a for a in matches if a.name.lower() == app.lower()]
+    matches = exact or matches
+    if not matches:
+        console.print()
+        console.print("  No apps matched", style="color(243)")
+        console.print()
+        return
+    if len(matches) > 1:
+        console.print()
+        console.print(f"  Be specific — matched: {', '.join(a.name for a in matches)}", style="color(243)")
+        console.print()
+        return
+    plan = plan_uninstall(matches[0])
+    if plan.blocked:
+        console.print()
+        console.print(f"  {plan.app.name}: {plan.blocked}", style="color(243)")
+        console.print()
+        return
+    home = str(Path.home())
+    console.print()
+    console.print(f"  {plan.app.name} — {len(plan.paths)} items, {human_size(plan.size)}", style="bold color(250)")
+    for path in plan.paths:
+        console.print(f"    {str(path).replace(home, '~')}", style="color(245)")
+    console.print()
+    if plan.running:
+        console.print(f"  {plan.app.name} is running — quit it first", style="color(243)")
+        console.print()
+        return
+    if dry_run:
+        return
+    if not yes:
+        click.confirm("  Move all of it to the Trash?", abort=True)
+    execute(plan)
+    backup_plist(PLIST_PATH, BACKUP_DIR)
+    remove_from_plist(PLIST_PATH, plan.app.bundle_id)
+    print_logo()
+    print_result(f"{plan.app.name} moved to the Trash", "put it back from the Finder's Trash")
+
+
 @main.command("style")
 @click.argument("style", type=click.Choice(STYLES))
 @click.argument("apps", nargs=-1)

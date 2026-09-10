@@ -38,6 +38,7 @@ shh allow off Slack          # turn an app's notifications off entirely
 shh style persistent Mail    # temporary (banner), persistent (stays), or off
 shh center off --all         # hide from Notification Center
 shh lockscreen off Messages  # hide on the Lock Screen
+shh uninstall "Book Tracker" # app + Library leftovers to the Trash (--dry-run to just look)
 shh sound off --category media
 shh undo                     # restore previous settings
 ```
@@ -56,6 +57,8 @@ shh undo                     # restore previous settings
 | `S` / `B` | sound / badges for every app (mutes all if any is on, else unmutes all) |
 | `/` | filter by name (`esc` clears) |
 | `a` | show / hide Apple system entries (daemons and agents; hidden by default) |
+| `o` | show / hide a Last used column (Spotlight's last-opened date) to spot apps you never open |
+| `U` | uninstall the app under the cursor: the .app plus its Library leftovers move to the Trash after a review; Apple software and running apps are refused |
 | `u` | revert the current row |
 | `enter` | review and apply all staged changes (one backup, one write) |
 | `esc` | discard staged changes |
@@ -66,6 +69,8 @@ Nothing is written until you confirm on `enter`; changed cells show in yellow.
 "Temporary" and "Persistent" are Apple's names for the two alert styles (banners that slide away vs. alerts that stay until dismissed); "off" unchecks Desktop.
 
 ## How it works
+
+Uninstall sweeps the way Hazel's App Sweep does: the `.app`, then `~/Library/{Application Support, Caches, Preferences, Saved Application State, HTTPStorages, Cookies, WebKit, Logs, Application Scripts, LaunchAgents, Containers, Group Containers}` entries keyed by the bundle id (and Application Support / Caches / Logs folders named exactly after the app). Everything goes to the Trash via `/usr/bin/trash`, never deleted outright, and the app's notification entry is dropped from the plist.
 
 `shh` reads and writes macOS notification preferences directly from the `usernoted` plist, then restarts the daemon to apply changes. A backup is automatically created before every change.
 

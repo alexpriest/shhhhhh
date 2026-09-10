@@ -8,8 +8,18 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Input, Static
 
+from shhhhhh.uninstall import (
+    UninstallPlan,
+    age_label,
+    execute as execute_uninstall,
+    human_size,
+    last_used,
+    plan_uninstall,
+    remove_from_plist,
+)
 from shhhhhh.plist import (
     ALLOW_BIT,
+    read_apps,
     BADGES_BIT,
     CENTER_HIDE_BITS,
     LOCK_SCREEN_HIDE_BIT,
@@ -26,7 +36,7 @@ from shhhhhh.plist import (
 )
 
 STYLE_ORDER = ("temporary", "persistent", "off")
-HELP_TEXT = " ↑↓ move · space on/off · t style · b badge · s sound · n center · l lock · S/B all · a system entries · / filter · enter apply · ? help · q quit"
+HELP_TEXT = " ↑↓ move · space on/off · t style · b badge · s sound · n center · l lock · S/B all · a system · o last used · U uninstall · / filter · enter apply · ? help · q quit"
 COLUMN_KEYS = ("app", "on", "style", "badges", "sound", "center", "lock")
 TOGGLE_WIDTH = 8
 HELP_LINES = [
@@ -45,6 +55,9 @@ HELP_LINES = [
     "  n  l          notif center / lock       S  B   sound / badge for every app",
     "  u             revert this row           /      filter by name (esc clears)",
     "  a             show / hide Apple system entries (daemons and agents, hidden by default)",
+    "  o             show / hide a Last used column (Spotlight's last-opened date, to spot dead apps)",
+    "  U             uninstall the app under the cursor: the .app plus its Library leftovers go to the Trash",
+    "                (reviewed first; Apple software and running apps are refused)",
     "  enter         review and apply          esc    discard staged changes",
     "  q             quit                      ?      this help",
     "",
@@ -110,6 +123,65 @@ class HelpScreen(ModalScreen[None]):
         event.prevent_default()
         event.stop()
         self.dismiss(None)
+
+
+class UninstallScreen(ModalScreen[bool]):
+    """Show what an uninstall will move to the Trash and ask once."""
+
+    DEFAULT_CSS = """
+    UninstallScreen {
+        align: center middle;
+    }
+    #uninstall-panel {
+        width: auto;
+        max-width: 100%;
+        height: auto;
+        max-height: 90%;
+        padding: 1 3;
+        border: round ansi_red;
+    }
+    #uninstall-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #uninstall-paths {
+        width: auto;
+        height: auto;
+        max-height: 24;
+        overflow-y: auto;
+        margin-bottom: 1;
+    }
+    #uninstall-hint {
+        color: $text-muted;
+    }
+    """
+
+    BINDINGS = [
+        Binding("enter", "confirm", "Uninstall", show=True, priority=True),
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
+    ]
+
+    def __init__(self, plan: UninstallPlan) -> None:
+        super().__init__()
+        self.plan = plan
+
+    def compose(self) -> ComposeResult:
+        home = str(Path.home())
+        lines = [f"  {str(p).replace(home, '~')}" for p in self.plan.paths]
+        with Vertical(id="uninstall-panel"):
+            yield Static(
+                f"Uninstall {self.plan.app.name}? Moves {len(self.plan.paths)} items ({human_size(self.plan.size)}) to the Trash "
+                f"and forgets its notification settings.",
+                id="uninstall-title",
+            )
+            yield Static("\n".join(lines), id="uninstall-paths")
+            yield Static("enter uninstall · esc cancel · everything lands in the Trash, so it can be put back", id="uninstall-hint")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -247,6 +319,8 @@ class ShhApp(App):
         self.original: dict[int, int] = {a.index: a.flags for a in apps}
         self.staged: dict[int, int] = dict(self.original)
         self.show_system = False
+        self.show_last_used = False
+        self.last_used: dict[str, str] = {}   # bundle id -> "3d ago"
         self.filter_text = ""
         self.visible_apps: list[AppInfo] = self._compute_visible()
         self.applied = False
@@ -294,7 +368,7 @@ class ShhApp(App):
             else ("showing system entries · a to hide" if self.show_system else "")
         )
         line = f"{len(shown)} apps · {on} on · {with_sound} with sound · {with_badges} with badges"
-        return f"{line}   ·   {tail}" if tail else line
+        return f"{line}, {tail}" if tail else line
 
     def _pending_changes(self) -> list[tuple[AppInfo, int, int]]:
         return [
@@ -343,7 +417,7 @@ class ShhApp(App):
                 return Text("✓", style="bold yellow", justify="center") if on else Text("✗", style="yellow", justify="center")
             return Text("✓", style="green", justify="center") if on else Text("✗", style="dim", justify="center")
 
-        return (
+        cells = [
             Text(app.name, style="bold" if modified else ""),
             on_cell,
             style_cell,
@@ -351,7 +425,11 @@ class ShhApp(App):
             check(SOUND_BIT),
             shown(_center),
             shown(_lock),
-        )
+        ]
+        if self.show_last_used:
+            label = self.last_used.get(app.bundle_id, "")
+            cells.append(Text(label, style="dim" if label in ("never", "") else "", justify="right"))
+        return tuple(cells)
 
     def _populate_table(self) -> None:
         table = self.query_one("#app-table", DataTable)
@@ -364,7 +442,8 @@ class ShhApp(App):
             return
         table = self.query_one("#app-table", DataTable)
         row_key = str(app.index)
-        for column, value in zip(COLUMN_KEYS, self._cells(app)):
+        keys = COLUMN_KEYS + (("last_used",) if self.show_last_used else ())
+        for column, value in zip(keys, self._cells(app)):
             table.update_cell(row_key, column, value)
 
     def _get_selected_app(self) -> AppInfo | None:
@@ -409,6 +488,8 @@ class ShhApp(App):
             "B": lambda: self._set_all(BADGES_BIT),
             "u": self._revert_row,
             "a": self._toggle_system,
+            "o": self._toggle_last_used,
+            "U": self._uninstall,
             "j": table.action_cursor_down,
             "down": table.action_cursor_down,
             "k": table.action_cursor_up,
@@ -469,6 +550,55 @@ class ShhApp(App):
         self.filter_text = event.value.lower()
         self.visible_apps = self._compute_visible()
         self._populate_table()
+
+    def _toggle_last_used(self) -> None:
+        table = self.query_one("#app-table", DataTable)
+        self.show_last_used = not self.show_last_used
+        if self.show_last_used:
+            missing = [a for a in self.apps if a.bundle_id not in self.last_used]
+            for app in missing:
+                self.last_used[app.bundle_id] = age_label(last_used(app.app_path)) if app.app_path.endswith(".app") else ""
+            table.add_column(Text("Last\nused", justify="right"), key="last_used", width=10)
+        else:
+            table.remove_column("last_used")
+        self._populate_table()
+
+    def _uninstall(self) -> None:
+        app = self._get_selected_app()
+        if not app:
+            return
+        plan = plan_uninstall(app)
+        if plan.blocked:
+            self.notify(f"{app.name}: {plan.blocked}", severity="warning")
+            return
+        if plan.running:
+            self.notify(f"{app.name} is running — quit it first", severity="warning")
+            return
+        self.push_screen(UninstallScreen(plan), lambda ok: self._on_uninstall_confirmed(plan, ok))
+
+    def _on_uninstall_confirmed(self, plan: UninstallPlan, confirmed: bool | None) -> None:
+        if not confirmed:
+            return
+        try:
+            execute_uninstall(plan)
+        except (RuntimeError, OSError) as exc:
+            self.notify(f"Uninstall stopped: {exc}", severity="error")
+            return
+        backup_plist(self.plist_path, self.backup_dir)
+        remove_from_plist(self.plist_path, plan.app.bundle_id)
+        self._reload_apps()
+        self.notify(f"{plan.app.name} moved to the Trash ({len(plan.paths)} items)")
+
+    def _reload_apps(self) -> None:
+        """Re-read the plist after an entry was removed; keep staged edits by bundle id."""
+        staged_by_id = {a.bundle_id: self.staged[a.index] for a in self.apps}
+        self.apps = read_apps(self.plist_path)
+        self.original = {a.index: a.flags for a in self.apps}
+        self.staged = {a.index: staged_by_id.get(a.bundle_id, a.flags) for a in self.apps}
+        self.visible_apps = self._compute_visible()
+        self._populate_table()
+        self._update_change_count()
+        self._update_summary()
 
     def _toggle_system(self) -> None:
         self.show_system = not self.show_system

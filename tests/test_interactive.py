@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from shhhhhh.interactive import ShhApp, ConfirmScreen, HelpScreen, describe_change
+from shhhhhh.interactive import ShhApp, ConfirmScreen, HelpScreen, UninstallScreen, describe_change
 from shhhhhh.plist import ALLOW_BIT, BADGES_BIT, SOUND_BIT, AppInfo, style_of
 
 ON = 1 << ALLOW_BIT
@@ -247,3 +247,59 @@ async def test_system_entries_hidden_until_a():
         assert "a to hide" in app._summary_text()
         await pilot.press("a")
         assert len(app.visible_apps) == 3
+
+
+@pytest.mark.asyncio
+async def test_o_adds_last_used_column_from_spotlight():
+    app = _make_app()
+    with patch("shhhhhh.interactive.last_used", return_value=None):
+        async with app.run_test() as pilot:
+            await pilot.press("o")
+            await pilot.pause()
+            table = app.query_one("#app-table")
+            assert "last_used" in [str(c.key.value) for c in table.columns.values()]
+            assert set(app.last_used.values()) == {""}   # no .app paths in the fixture -> nothing looked up
+            await pilot.press("o")
+            await pilot.pause()
+            assert "last_used" not in [str(c.key.value) for c in table.columns.values()]
+
+
+@pytest.mark.asyncio
+async def test_U_refuses_apple_and_non_bundles_with_a_warning():
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await pilot.press("U")          # Arc has no app_path in the fixture
+        await pilot.pause()
+        assert not isinstance(app.screen, UninstallScreen)
+        assert app.is_running
+
+
+@pytest.mark.asyncio
+async def test_U_reviews_then_trashes_and_drops_the_entry(tmp_path):
+    import plistlib
+    plist = tmp_path / "usernoted.plist"
+    bundle = tmp_path / "Widget.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    with open(plist, "wb") as f:
+        plistlib.dump({"apps": [
+            {"bundle-id": "com.example.widget", "flags": ON | TEMP | BADGE, "path": str(bundle)},
+            {"bundle-id": "com.example.zed", "flags": ON | TEMP, "path": "/Applications/Zed.app"},
+        ]}, f)
+    from shhhhhh.plist import read_apps
+    app = ShhApp(read_apps(plist), plist, tmp_path / ".shh")
+    with patch("shhhhhh.uninstall._is_running", return_value=False), \
+         patch("shhhhhh.interactive.execute_uninstall", return_value=[bundle]) as ex, \
+         patch("shhhhhh.uninstall.subprocess"):
+        async with app.run_test() as pilot:
+            await pilot.press("down", "s")       # stage something on Zed first; it must survive
+            await pilot.press("up", "U")
+            await pilot.pause()
+            assert isinstance(app.screen, UninstallScreen)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert ex.called
+            assert [a.name for a in app.apps] == ["Zed"]
+            zed = app.apps[0]
+            assert app.staged[zed.index] == ON | TEMP | SOUND   # staged edit carried across the reload
+    with open(plist, "rb") as f:
+        assert [a["bundle-id"] for a in plistlib.load(f)["apps"]] == ["com.example.zed"]

@@ -285,3 +285,23 @@ def test_list_hides_system_entries_unless_asked(tmp_path):
         with_system = runner.invoke(main, ["list", "--flat", "--system"]).output
     assert "tccd" not in default and "1 Apple system entries hidden" in default
     assert "tccd" in with_system
+
+
+def test_uninstall_dry_run_lists_paths_and_touches_nothing(tmp_path):
+    bundle = tmp_path / "Widget.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    plist = _make_plist([{"bundle-id": "com.example.widget", "flags": 0, "path": str(bundle)}], tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist), patch("shhhhhh.uninstall._is_running", return_value=False):
+        result = runner.invoke(main, ["uninstall", "Widget", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Widget.app" in result.output
+    assert bundle.exists()
+
+
+def test_uninstall_refuses_apple(tmp_path):
+    plist = _make_plist([{"bundle-id": "com.apple.mail", "flags": 0, "path": "/System/Applications/Mail.app"}], tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        result = runner.invoke(main, ["uninstall", "Mail", "-y"])
+    assert "Apple" in result.output
