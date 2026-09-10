@@ -286,6 +286,51 @@ def uninstall_cmd(app, dry_run, yes):
     print_result(f"{plan.app.name} moved to the Trash", "put it back from the Finder's Trash")
 
 
+@main.command("sweep")
+@click.argument("bundle_id")
+@click.option("--dry-run", is_flag=True, help="List what would be trashed and stop")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def sweep_cmd(bundle_id, dry_run, yes):
+    """Trash the Library leftovers of an app that is already gone, by bundle id."""
+    from shhhhhh.uninstall import UninstallError, UninstallPlan, execute, human_size, library_leftovers
+    from shhhhhh.plist import AppInfo
+
+    if bundle_id.startswith("com.apple."):
+        console.print()
+        console.print("  Apple system software — leave it to Apple", style="color(243)")
+        console.print()
+        return
+    name = bundle_id.rsplit(".", 1)[-1]
+    paths = library_leftovers(bundle_id, name)
+    if not paths:
+        console.print()
+        console.print(f"  Nothing left for {bundle_id}", style="color(243)")
+        console.print()
+        return
+    plan = UninstallPlan(app=AppInfo(name=name, bundle_id=bundle_id, flags=0, index=-1), paths=paths)
+    home = str(Path.home())
+    console.print()
+    console.print(f"  {bundle_id} — {len(paths)} items, {human_size(plan.size)}", style="bold color(250)")
+    for path in paths:
+        console.print(f"    {str(path).replace(home, '~')}", style="color(245)")
+    console.print()
+    if dry_run:
+        return
+    if not yes:
+        click.confirm("  Move all of it to the Trash?", abort=True)
+    try:
+        # No .app in this plan, so the "app last" ordering has nothing to protect.
+        plan.paths = [paths[0]] + paths[1:]
+        execute(plan)
+    except UninstallError as exc:
+        console.print()
+        console.print(f"  Stopped — {exc}", style="color(178)")
+        console.print()
+        return
+    print_logo()
+    print_result(f"Swept {len(paths)} items to the Trash", "put them back from the Finder's Trash")
+
+
 @main.command("style")
 @click.argument("style", type=click.Choice(STYLES))
 @click.argument("apps", nargs=-1)

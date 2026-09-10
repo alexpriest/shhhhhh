@@ -62,46 +62,74 @@ def plan_uninstall(app: AppInfo) -> UninstallPlan:
     return plan
 
 
+def _identities(bundle_id: str) -> list[str]:
+    """The ids an app's files are keyed by: the bundle id itself and, for Mac
+    Catalyst builds, the iOS id underneath ("maccatalyst.com.x.y" -> "com.x.y")."""
+    ids = [bundle_id]
+    if bundle_id.startswith("maccatalyst."):
+        ids.append(bundle_id[len("maccatalyst."):])
+    return ids
+
+
+def _belongs(name: str, ids: list[str]) -> bool:
+    """Exact id, or an extension of it: "<id>.widgets", "<id>.intent-handler", "group.<id>.coredata"."""
+    for ident in ids:
+        if name == ident or name.startswith(f"{ident}."):
+            return True
+        if name.startswith("group.") and (name == f"group.{ident}" or name.startswith(f"group.{ident}.")):
+            return True
+        if name.endswith(f".{ident}"):  # team-id prefixed group containers: ABC123.com.x.y
+            return True
+    return False
+
+
 def library_leftovers(bundle_id: str, app_name: str) -> list[Path]:
-    """Support files keyed by bundle id (exact) or app name (exact directory name)."""
+    """Support files keyed by the app's ids (plus their extensions) or the exact app name.
+
+    Deliberately not swept: ~/Library/Mobile Documents (iCloud documents are the
+    user's data on every device) and other apps' caches that merely mention the app.
+    """
+    ids = _identities(bundle_id)
     found: list[Path] = []
 
     def add(p: Path) -> None:
         if p.exists() and p not in found:
             found.append(p)
 
-    by_id = {
-        "Application Support": (bundle_id,),
-        "Caches": (bundle_id, f"{bundle_id}.ShipIt"),
-        "Preferences": (f"{bundle_id}.plist",),
-        "Saved Application State": (f"{bundle_id}.savedState",),
-        "HTTPStorages": (bundle_id, f"{bundle_id}.binarycookies"),
-        "Cookies": (f"{bundle_id}.binarycookies",),
-        "WebKit": (bundle_id,),
-        "Logs": (bundle_id,),
-        "Application Scripts": (bundle_id,),
-    }
-    for folder, names in by_id.items():
-        for name in names:
-            add(LIBRARY / folder / name)
+    # Folders whose children are named by bundle id (with extension suffixes)
+    for folder in (
+        "Application Support", "Caches", "Caches/CloudKit", "HTTPStorages", "WebKit", "Logs",
+        "Application Scripts", "Group Containers", "Saved Application State", "Cookies",
+        "Preferences", "LaunchAgents",
+    ):
+        root = LIBRARY / folder
+        if not root.is_dir():
+            continue
+        for entry in root.iterdir():
+            stem = entry.name
+            for suffix in (".plist", ".savedState", ".binarycookies"):
+                if stem.endswith(suffix):
+                    stem = stem[: -len(suffix)]
+            if _belongs(stem, ids) or (stem.endswith(".ShipIt") and _belongs(stem[:-7], ids)):
+                add(entry)
+
     for folder in ("Application Support", "Caches", "Logs"):
         add(LIBRARY / folder / app_name)
 
-    # Preferences written under a suffix: com.example.app.helper.plist
-    for p in (LIBRARY / "Preferences").glob(f"{bundle_id}.*.plist"):
-        add(p)
-    for p in (LIBRARY / "LaunchAgents").glob(f"{bundle_id}*.plist"):
-        add(p)
-
     # Sandbox containers are UUID directories; the bundle id sits in their metadata.
-    for container in _containers(bundle_id):
+    for container in _containers(ids):
         add(container)
-    for p in (LIBRARY / "Group Containers").glob(f"*.{bundle_id}"):
-        add(p)
+
+    # Recent-documents lists the system keeps per app
+    sfl_root = LIBRARY / "Application Support" / "com.apple.sharedfilelist"
+    if sfl_root.is_dir():
+        for p in sfl_root.rglob("*.sfl*"):
+            if _belongs(p.name.split(".sfl")[0], ids):
+                add(p)
     return found
 
 
-def _containers(bundle_id: str) -> list[Path]:
+def _containers(ids: list[str]) -> list[Path]:
     root = LIBRARY / "Containers"
     if not root.exists():
         return []
@@ -110,10 +138,10 @@ def _containers(bundle_id: str) -> list[Path]:
         meta = entry / ".com.apple.containermanagerd.metadata.plist"
         try:
             with open(meta, "rb") as f:
-                ident = plistlib.load(f).get("MCMMetadataIdentifier")
+                ident = plistlib.load(f).get("MCMMetadataIdentifier") or entry.name
         except Exception:
             ident = entry.name
-        if ident == bundle_id:
+        if _belongs(ident, ids):
             hits.append(entry)
     return hits
 

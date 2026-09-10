@@ -305,3 +305,15 @@ def test_uninstall_refuses_apple(tmp_path):
     with patch("shhhhhh.cli.PLIST_PATH", plist):
         result = runner.invoke(main, ["uninstall", "Mail", "-y"])
     assert "Apple" in result.output
+
+
+def test_sweep_dry_run_lists_leftovers_by_bundle_id(tmp_path, monkeypatch):
+    from shhhhhh import uninstall
+    lib = tmp_path / "home" / "Library"
+    (lib / "Application Scripts" / "com.example.gone.widgets").mkdir(parents=True)
+    monkeypatch.setattr(uninstall, "LIBRARY", lib)
+    runner = CliRunner()
+    result = runner.invoke(main, ["sweep", "com.example.gone", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "com.example.gone.widgets" in result.output
+    assert (lib / "Application Scripts" / "com.example.gone.widgets").exists()

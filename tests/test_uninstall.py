@@ -147,3 +147,37 @@ def test_trash_failure_is_reported_not_raised_raw(tmp_path, monkeypatch):
             uninstall.execute(plan)
     assert "Operation not permitted" in str(info.value)
     assert info.value.moved == []            # first path failed, nothing else attempted
+
+
+def test_sweep_catches_extensions_catalyst_ids_and_recent_lists_but_not_icloud(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    lib = home / "Library"
+    bundle = tmp_path / "Applications" / "Book Tracker.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    app = AppInfo(name="Book Tracker", bundle_id="maccatalyst.com.dev.booktrack", flags=0, index=0, app_path=str(bundle))
+    wanted = [
+        lib / "Application Scripts" / "maccatalyst.com.dev.booktrack.booktrack-widgets",
+        lib / "Application Scripts" / "maccatalyst.com.dev.booktrack.intent-handler",
+        lib / "Application Scripts" / "group.com.dev.booktrack.coredata",
+        lib / "Group Containers" / "group.com.dev.booktrack.coredata",
+        lib / "Caches" / "CloudKit" / "maccatalyst.com.dev.booktrack",
+        lib / "Application Support" / "com.apple.sharedfilelist" / "com.apple.LSSharedFileList.ApplicationRecentDocuments" / "maccatalyst.com.dev.booktrack.sfl4",
+    ]
+    for w in wanted:
+        if w.suffix == ".sfl4":
+            w.parent.mkdir(parents=True, exist_ok=True); w.write_bytes(b"x")
+        else:
+            w.mkdir(parents=True)
+    ext_container = lib / "Containers" / "UUID-1"
+    ext_container.mkdir(parents=True)
+    with open(ext_container / ".com.apple.containermanagerd.metadata.plist", "wb") as f:
+        plistlib.dump({"MCMMetadataIdentifier": "maccatalyst.com.dev.booktrack.booktrack-liveactivities"}, f)
+    wanted.append(ext_container)
+    # must be left alone
+    icloud = lib / "Mobile Documents" / "iCloud~com~dev~booktrack"; icloud.mkdir(parents=True)
+    other_cache = lib / "Application Support" / "DeckApp" / "IconCache"; other_cache.mkdir(parents=True)
+    (other_cache / "app_maccatalyst_com_dev_booktrack.b64").write_bytes(b"x")
+    lookalike = lib / "Application Support" / "com.dev.booktrackpro"; lookalike.mkdir()
+    with patch("shhhhhh.uninstall._is_running", return_value=False):
+        plan = uninstall.plan_uninstall(app)
+    assert set(plan.paths[1:]) == set(wanted)

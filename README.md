@@ -39,6 +39,7 @@ shh style persistent Mail    # temporary (banner), persistent (stays), or off
 shh center off --all         # hide from Notification Center
 shh lockscreen off Messages  # hide on the Lock Screen
 shh uninstall "Book Tracker" # app + Library leftovers to the Trash (--dry-run to just look)
+shh sweep com.dev.gone       # leftovers only, for an app that is already gone
 shh sound off --category media
 shh undo                     # restore previous settings
 ```
@@ -70,7 +71,7 @@ Nothing is written until you confirm on `enter`; changed cells show in yellow.
 
 ## How it works
 
-Uninstall sweeps the way Hazel's App Sweep does: the `.app`, then `~/Library/{Application Support, Caches, Preferences, Saved Application State, HTTPStorages, Cookies, WebKit, Logs, Application Scripts, LaunchAgents, Containers, Group Containers}` entries keyed by the bundle id (and Application Support / Caches / Logs folders named exactly after the app). Everything goes to the Trash via `/usr/bin/trash`, never deleted outright, and the app's notification entry is dropped from the plist.
+Uninstall sweeps the way Hazel's App Sweep does: the `.app`, then `~/Library/{Application Support, Caches, Preferences, Saved Application State, HTTPStorages, Cookies, WebKit, Logs, Application Scripts, LaunchAgents, Containers, Group Containers}` entries keyed by the bundle id and its extensions (`<id>.widgets`, `group.<id>.…`, the iOS id under a Mac Catalyst `maccatalyst.` prefix), sandbox containers found through their metadata, CloudKit caches, the app's recent-documents list, and Application Support / Caches / Logs folders named exactly after the app. Never touched: `~/Library/Mobile Documents` (your iCloud documents) and other apps' caches that merely mention the app. Everything goes to the Trash via `/usr/bin/trash`, never deleted outright, and the app's notification entry is dropped from the plist.
 
 `shh` reads and writes macOS notification preferences directly from the `usernoted` plist, then restarts the daemon to apply changes. A backup is automatically created before every change.
 
