@@ -5,6 +5,7 @@ so a mistake is recoverable from the Finder. Apple's own software is refused.
 """
 from __future__ import annotations
 
+import os
 import plistlib
 import shutil
 import subprocess
@@ -30,6 +31,12 @@ class UninstallPlan:
     @property
     def size(self) -> int:
         return sum(_size(p) for p in self.paths)
+
+    @property
+    def needs_admin(self) -> list[Path]:
+        """Paths not owned by the current user (App Store installs are root:wheel);
+        the Finder has to move those and will ask for the account password."""
+        return [p for p in self.paths if not _owned_by_me(p)]
 
 
 def blocked_reason(app: AppInfo) -> str | None:
@@ -111,6 +118,13 @@ def _containers(bundle_id: str) -> list[Path]:
     return hits
 
 
+def _owned_by_me(path: Path) -> bool:
+    try:
+        return path.lstat().st_uid == os.getuid()
+    except OSError:
+        return True
+
+
 def _is_running(bundle: Path) -> bool:
     result = subprocess.run(["pgrep", "-f", str(bundle / "Contents/MacOS/")], capture_output=True)
     return result.returncode == 0
@@ -133,19 +147,47 @@ def human_size(n: float) -> str:
     return f"{n:.1f} TB"
 
 
+class UninstallError(RuntimeError):
+    """One path could not be moved; ``moved`` lists what already went to the Trash."""
+
+    def __init__(self, path: Path, detail: str, moved: list[Path]) -> None:
+        super().__init__(f"could not move {path.name}: {detail}")
+        self.path = path
+        self.moved = moved
+
+
 def execute(plan: UninstallPlan) -> list[Path]:
-    """Move every planned path to the Trash. Returns what was moved."""
+    """Move every planned path to the Trash. Returns what was moved.
+
+    Leftovers go first and the .app last, so a refused .app (wrong password,
+    cancelled dialog) never leaves an app on disk with its data gone — the
+    .app is index 0 of the plan.
+    """
     if plan.blocked or plan.running:
         raise RuntimeError(plan.blocked or "app is running — quit it first")
-    moved = []
-    for path in plan.paths:
-        if Path(TRASH).exists():
-            subprocess.run([TRASH, str(path)], check=True, capture_output=True)
-        else:
-            dest = HOME / ".Trash" / path.name
-            shutil.move(str(path), str(dest))
+    moved: list[Path] = []
+    for path in plan.paths[1:] + plan.paths[:1]:
+        try:
+            if not _owned_by_me(path):
+                _finder_trash(path)
+            elif Path(TRASH).exists():
+                subprocess.run([TRASH, str(path)], check=True, capture_output=True, text=True)
+            else:
+                shutil.move(str(path), str(HOME / ".Trash" / path.name))
+        except subprocess.CalledProcessError as exc:
+            lines = (exc.stderr or "").strip().splitlines()
+            raise UninstallError(path, lines[-1] if lines else f"exit {exc.returncode}", moved) from exc
+        except OSError as exc:
+            raise UninstallError(path, str(exc), moved) from exc
         moved.append(path)
     return moved
+
+
+def _finder_trash(path: Path) -> None:
+    """Ask the Finder to move a path to the Trash. For root-owned items the Finder
+    puts up its usual administrator-password dialog; cancelling it raises here."""
+    script = f'tell application "Finder" to delete POSIX file "{str(path)}"'
+    subprocess.run(["osascript", "-e", script], check=True, capture_output=True, text=True)
 
 
 def remove_from_plist(plist_path: Path, bundle_id: str, restart: bool = True) -> None:

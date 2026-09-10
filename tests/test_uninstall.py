@@ -114,3 +114,36 @@ def test_age_label():
     assert uninstall.age_label(now - timedelta(days=8), now) == "8d ago"
     assert uninstall.age_label(now - timedelta(days=70), now) == "2mo ago"
     assert uninstall.age_label(now - timedelta(days=800), now) == "2y ago"
+
+
+def test_root_owned_paths_go_through_the_finder_and_the_app_goes_last(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    _scatter(home / "Library")
+    app = _app(tmp_path)
+    bundle = Path(app.app_path)
+    with patch("shhhhhh.uninstall._is_running", return_value=False):
+        plan = uninstall.plan_uninstall(app)
+    calls = []
+    with patch("shhhhhh.uninstall._owned_by_me", side_effect=lambda p: p != bundle), \
+         patch("shhhhhh.uninstall._finder_trash", side_effect=lambda p: calls.append(p)):
+        assert plan.needs_admin == [bundle]
+        moved = uninstall.execute(plan)
+    assert calls == [bundle]                 # only the root-owned .app went via the Finder
+    assert moved[-1] == bundle               # and it went last
+    assert bundle.exists()                   # the fake Finder did not touch disk
+
+
+def test_trash_failure_is_reported_not_raised_raw(tmp_path, monkeypatch):
+    import subprocess
+    home = _fake_home(tmp_path, monkeypatch)
+    _scatter(home / "Library")
+    app = _app(tmp_path)
+    with patch("shhhhhh.uninstall._is_running", return_value=False):
+        plan = uninstall.plan_uninstall(app)
+    err = subprocess.CalledProcessError(5, ["trash"], stderr="trash[1] # Error attempting to move /Applications/Widget.app: Operation not permitted")
+    with patch("shhhhhh.uninstall._owned_by_me", return_value=False), \
+         patch("shhhhhh.uninstall._finder_trash", side_effect=err):
+        with pytest.raises(uninstall.UninstallError) as info:
+            uninstall.execute(plan)
+    assert "Operation not permitted" in str(info.value)
+    assert info.value.moved == []            # first path failed, nothing else attempted

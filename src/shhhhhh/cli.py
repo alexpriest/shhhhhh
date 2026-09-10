@@ -234,7 +234,7 @@ main.add_command(_shown_command("lockscreen", "on the Lock Screen", lambda a: a.
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 def uninstall_cmd(app, dry_run, yes):
     """Move an app and its Library leftovers to the Trash, and forget its notifications."""
-    from shhhhhh.uninstall import execute, human_size, plan_uninstall, remove_from_plist
+    from shhhhhh.uninstall import UninstallError, execute, human_size, plan_uninstall, remove_from_plist
 
     matches = _match_apps(read_apps(PLIST_PATH), [app])
     exact = [a for a in matches if a.name.lower() == app.lower()]
@@ -260,6 +260,8 @@ def uninstall_cmd(app, dry_run, yes):
     console.print(f"  {plan.app.name} — {len(plan.paths)} items, {human_size(plan.size)}", style="bold color(250)")
     for path in plan.paths:
         console.print(f"    {str(path).replace(home, '~')}", style="color(245)")
+    if plan.needs_admin:
+        console.print("  Owned by root (an App Store install): the Finder will move it and ask for your password.", style="color(178)")
     console.print()
     if plan.running:
         console.print(f"  {plan.app.name} is running — quit it first", style="color(243)")
@@ -269,7 +271,15 @@ def uninstall_cmd(app, dry_run, yes):
         return
     if not yes:
         click.confirm("  Move all of it to the Trash?", abort=True)
-    execute(plan)
+    try:
+        execute(plan)
+    except UninstallError as exc:
+        console.print()
+        console.print(f"  Stopped — {exc}", style="color(178)")
+        if exc.moved:
+            console.print(f"  Already in the Trash: {', '.join(p.name for p in exc.moved)}; the rest untouched.", style="color(243)")
+        console.print()
+        return
     backup_plist(PLIST_PATH, BACKUP_DIR)
     remove_from_plist(PLIST_PATH, plan.app.bundle_id)
     print_logo()

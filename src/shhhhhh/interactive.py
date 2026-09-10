@@ -9,6 +9,7 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Input, Static
 
 from shhhhhh.uninstall import (
+    UninstallError,
     UninstallPlan,
     age_label,
     execute as execute_uninstall,
@@ -151,6 +152,10 @@ class UninstallScreen(ModalScreen[bool]):
         overflow-y: auto;
         margin-bottom: 1;
     }
+    #uninstall-admin {
+        color: ansi_yellow;
+        margin-bottom: 1;
+    }
     #uninstall-hint {
         color: $text-muted;
     }
@@ -175,6 +180,11 @@ class UninstallScreen(ModalScreen[bool]):
                 id="uninstall-title",
             )
             yield Static("\n".join(lines), id="uninstall-paths")
+            if self.plan.needs_admin:
+                yield Static(
+                    "Owned by root (an App Store install), so the Finder will do the move and ask for your password.",
+                    id="uninstall-admin",
+                )
             yield Static("enter uninstall · esc cancel · everything lands in the Trash, so it can be put back", id="uninstall-hint")
 
     def action_confirm(self) -> None:
@@ -581,8 +591,12 @@ class ShhApp(App):
             return
         try:
             execute_uninstall(plan)
-        except (RuntimeError, OSError) as exc:
-            self.notify(f"Uninstall stopped: {exc}", severity="error")
+        except UninstallError as exc:
+            kept = f" {len(exc.moved)} items already in the Trash; the rest untouched." if exc.moved else ""
+            self.notify(f"Uninstall stopped — {exc}.{kept}", severity="error", timeout=12)
+            return
+        except Exception as exc:  # never take the screen down over an uninstall
+            self.notify(f"Uninstall stopped: {exc}", severity="error", timeout=12)
             return
         backup_plist(self.plist_path, self.backup_dir)
         remove_from_plist(self.plist_path, plan.app.bundle_id)
