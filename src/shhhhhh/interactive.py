@@ -26,12 +26,29 @@ from shhhhhh.plist import (
 )
 
 STYLE_ORDER = ("temporary", "persistent", "off")
-HELP_TEXT = " ↑↓/jk move · space on/off · t style · b badges · s sound · n center · l lock screen · S/B all · u revert · / filter · enter apply · esc discard · q quit"
+HELP_TEXT = " ↑↓ move · space on/off · t style · b badge · s sound · n center · l lock · S/B all · / filter · enter apply · ? help · q quit"
 COLUMN_KEYS = ("app", "on", "style", "badges", "sound", "center", "lock")
-LEGEND_TEXT = (
-    "  On = notifications allowed at all · Style = temporary banner, persistent alert, or off (nothing on the desktop)\n"
-    "  Badges = red count on the Dock icon · Sound = plays a sound · Notif Center = kept in Notification Center · Lock Screen = shown while locked"
-)
+TOGGLE_WIDTH = 8
+HELP_LINES = [
+    "Columns",
+    "  On            notifications allowed at all (the master switch)",
+    "  Style         temporary = a banner that slides away · persistent = an alert that stays",
+    "                off = nothing appears on the desktop (badge, sound, and the rest still apply)",
+    "  Badge         red count on the Dock icon",
+    "  Sound         plays a sound",
+    "  Notif Center  kept in Notification Center after it appears",
+    "  Lock Screen   shown while the Mac is locked",
+    "",
+    "Keys",
+    "  ↑ ↓  j k      move                      space  notifications on / off",
+    "  t             cycle style               b  s   badge / sound",
+    "  n  l          notif center / lock       S  B   sound / badge for every app",
+    "  u             revert this row           /      filter by name (esc clears)",
+    "  enter         review and apply          esc    discard staged changes",
+    "  q             quit                      ?      this help",
+    "",
+    "Nothing is written until you confirm on enter. Yellow = staged, not yet applied.",
+]
 
 
 def _mark(on: bool) -> str:
@@ -62,6 +79,36 @@ def _center(flags: int) -> bool:
 
 def _lock(flags: int) -> bool:
     return not has_flag(flags, LOCK_SCREEN_HIDE_BIT)
+
+
+class HelpScreen(ModalScreen[None]):
+    """What the columns mean and what the keys do. Any key closes it."""
+
+    DEFAULT_CSS = """
+    HelpScreen {
+        align: center middle;
+    }
+    #help-panel {
+        width: auto;
+        max-width: 100%;
+        height: auto;
+        padding: 1 3;
+        border: round ansi_bright_black;
+    }
+    #help-text {
+        width: auto;
+        height: auto;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help-panel"):
+            yield Static("\n".join(HELP_LINES), id="help-text")
+
+    def on_key(self, event) -> None:
+        event.prevent_default()
+        event.stop()
+        self.dismiss(None)
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -122,23 +169,22 @@ class ShhApp(App):
     CSS = """
     #header-bar {
         height: auto;
-        padding: 1 2;
+        padding: 1 2 0 2;
         color: $text-muted;
     }
     #summary {
         height: auto;
-        padding: 0 2;
+        padding: 1 2;
         color: $text;
-    }
-    #legend {
-        height: auto;
-        padding: 0 2 1 2;
-        color: $text-muted;
     }
     #change-count {
         height: auto;
         padding: 0 2;
         color: $warning;
+        display: none;
+    }
+    #change-count.visible {
+        display: block;
     }
     #filter-input {
         display: none;
@@ -209,21 +255,20 @@ class ShhApp(App):
     def compose(self) -> ComposeResult:
         yield Static("shh — silence your mac, app by app", id="header-bar")
         yield Static(self._summary_text(), id="summary")
-        yield Static(LEGEND_TEXT, id="legend")
         yield Static("", id="change-count")
         yield Input(placeholder="Filter apps...", id="filter-input")
-        yield DataTable(id="app-table", cursor_type="row")
+        yield DataTable(id="app-table", cursor_type="row", header_height=2)
         yield Static(HELP_TEXT, id="footer-help")
 
     def on_mount(self) -> None:
         table = self.query_one("#app-table", DataTable)
-        table.add_column("App", key="app", width=32)
-        table.add_column("On", key="on", width=4)
-        table.add_column("Style", key="style", width=11)
-        table.add_column("Badges", key="badges", width=7)
-        table.add_column("Sound", key="sound", width=6)
-        table.add_column("Notif Center", key="center", width=13)
-        table.add_column("Lock Screen", key="lock", width=12)
+        table.add_column(Text("\nApp"), key="app", width=32)
+        table.add_column(Text("\nOn", justify="center"), key="on", width=TOGGLE_WIDTH)
+        table.add_column(Text("\nStyle"), key="style", width=11)
+        table.add_column(Text("\nBadge", justify="center"), key="badges", width=TOGGLE_WIDTH)
+        table.add_column(Text("\nSound", justify="center"), key="sound", width=TOGGLE_WIDTH)
+        table.add_column(Text("Notif\nCenter", justify="center"), key="center", width=TOGGLE_WIDTH)
+        table.add_column(Text("Lock\nScreen", justify="center"), key="lock", width=TOGGLE_WIDTH)
         self._populate_table()
         table.focus()
 
@@ -234,7 +279,7 @@ class ShhApp(App):
         on = sum(1 for f in self.staged.values() if has_flag(f, ALLOW_BIT))
         with_sound = sum(1 for f in self.staged.values() if has_flag(f, SOUND_BIT))
         with_badges = sum(1 for f in self.staged.values() if has_flag(f, BADGES_BIT))
-        return f"  {total} apps · {on} on · {with_sound} with sound · {with_badges} with badges"
+        return f"{total} apps · {on} on · {with_sound} with sound · {with_badges} with badges"
 
     def _pending_changes(self) -> list[tuple[AppInfo, int, int]]:
         return [
@@ -254,6 +299,7 @@ class ShhApp(App):
         count = len(self._pending_changes())
         widget = self.query_one("#change-count", Static)
         widget.update(f"  {count} change{'s' if count != 1 else ''} staged — enter to apply" if count else "")
+        widget.set_class(bool(count), "visible")
 
     def _update_summary(self) -> None:
         self.query_one("#summary", Static).update(self._summary_text())
@@ -268,19 +314,19 @@ class ShhApp(App):
             on = has_flag(new, bit)
             changed = has_flag(old, bit) != on
             if changed:
-                return Text("✓", style="bold yellow") if on else Text("✗", style="yellow")
-            return Text("✓", style="green") if on else Text("✗", style="dim")
+                return Text("✓", style="bold yellow", justify="center") if on else Text("✗", style="yellow", justify="center")
+            return Text("✓", style="green", justify="center") if on else Text("✗", style="dim", justify="center")
 
         allowed = has_flag(new, ALLOW_BIT)
         allow_changed = has_flag(old, ALLOW_BIT) != allowed
-        on_cell = Text("●" if allowed else "○", style="bold yellow" if allow_changed else ("green" if allowed else "dim"))
+        on_cell = Text("●" if allowed else "○", style="bold yellow" if allow_changed else ("green" if allowed else "dim"), justify="center")
         style = style_of(new)
         style_cell = Text(style, style="bold yellow" if style_of(old) != style else ("" if style != "off" else "dim"))
         def shown(fn) -> Text:
             on = fn(new)
             if fn(old) != on:
-                return Text("✓", style="bold yellow") if on else Text("✗", style="yellow")
-            return Text("✓", style="green") if on else Text("✗", style="dim")
+                return Text("✓", style="bold yellow", justify="center") if on else Text("✗", style="yellow", justify="center")
+            return Text("✓", style="green", justify="center") if on else Text("✗", style="dim", justify="center")
 
         return (
             Text(app.name, style="bold" if modified else ""),
@@ -354,6 +400,7 @@ class ShhApp(App):
             "slash": self._open_filter,
             "enter": self._do_apply,
             "q": self._maybe_quit,
+            "question_mark": lambda: self.push_screen(HelpScreen()),
             "escape": self._discard_or_quit,
         }
         action = actions.get(key)

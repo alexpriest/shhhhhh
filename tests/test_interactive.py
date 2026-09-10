@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from shhhhhh.interactive import ShhApp, ConfirmScreen, describe_change
+from shhhhhh.interactive import ShhApp, ConfirmScreen, HelpScreen, describe_change
 from shhhhhh.plist import ALLOW_BIT, BADGES_BIT, SOUND_BIT, AppInfo, style_of
 
 ON = 1 << ALLOW_BIT
@@ -220,3 +220,16 @@ async def test_n_and_l_toggle_center_and_lock_screen_inverted_bits():
         assert app.staged[1] & (1 << 12)                              # hidden on Lock Screen
         await pilot.press("n", "l")
         assert app.staged[1] == app.original[1]
+
+
+@pytest.mark.asyncio
+async def test_question_mark_opens_help_and_any_key_closes_it():
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+        await pilot.press("s")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
+        assert app.staged == app.original   # the closing key does not toggle anything
