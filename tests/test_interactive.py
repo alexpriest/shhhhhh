@@ -252,9 +252,7 @@ async def test_system_entries_hidden_until_a():
 @pytest.mark.asyncio
 async def test_o_adds_last_used_column_from_spotlight():
     app = _make_app()
-    with patch("shhhhhh.interactive.last_used", return_value=(None, False)), \
-         patch("shhhhhh.interactive.usage_from_knowledge", return_value={}), \
-         patch("shhhhhh.interactive.running_executables", return_value=[]):
+    with patch("shhhhhh.interactive.last_used_many", return_value={}):
         async with app.run_test() as pilot:
             await pilot.press("o")
             await pilot.pause()

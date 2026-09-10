@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from shhhhhh.plist import AppInfo
@@ -59,6 +60,7 @@ def plan_uninstall(app: AppInfo) -> UninstallPlan:
         return plan
     bundle = Path(app.app_path)
     plan.running = _is_running(bundle)
+    _container_index.cache_clear()
     plan.paths = [bundle] + library_leftovers(app.bundle_id, bundle.stem)
     return plan
 
@@ -139,21 +141,18 @@ def _container_identity(entry: Path) -> str:
         return entry.name
 
 
-def _containers(ids: list[str]) -> list[Path]:
+@lru_cache(maxsize=1)
+def _container_index() -> tuple[tuple[str, Path], ...]:
+    """(identity, path) for every sandbox container, read once per process.
+    ~800 entries on a busy Mac; each needs a metadata plist read."""
     root = LIBRARY / "Containers"
     if not root.exists():
-        return []
-    hits = []
-    for entry in root.iterdir():
-        meta = entry / ".com.apple.containermanagerd.metadata.plist"
-        try:
-            with open(meta, "rb") as f:
-                ident = plistlib.load(f).get("MCMMetadataIdentifier") or entry.name
-        except Exception:
-            ident = entry.name
-        if _belongs(ident, ids):
-            hits.append(entry)
-    return hits
+        return ()
+    return tuple((_container_identity(entry), entry) for entry in root.iterdir())
+
+
+def _containers(ids: list[str]) -> list[Path]:
+    return [path for ident, path in _container_index() if _belongs(ident, ids)]
 
 
 def _owned_by_me(path: Path) -> bool:
@@ -267,27 +266,36 @@ def usage_from_knowledge() -> dict[str, datetime]:
     return {bid: datetime.fromtimestamp(when + _COCOA_EPOCH, tz=timezone.utc) for bid, when in rows if when}
 
 
+def spotlight_last_used_many(app_paths: list[str]) -> dict[str, datetime]:
+    """Spotlight's kMDItemLastUsedDate for many bundles in one mdls call (-raw
+    separates results with NUL). Often null for apps launched from the Dock, login
+    items, or Spotlight, so it is one signal among several."""
+    paths = [p for p in app_paths if p.endswith(".app")]
+    if not paths:
+        return {}
+    result = subprocess.run(["mdls", "-name", "kMDItemLastUsedDate", "-raw", *paths], capture_output=True, text=True)
+    values = result.stdout.split("\0")
+    out: dict[str, datetime] = {}
+    for path, raw in zip(paths, values):
+        raw = raw.strip()
+        if raw in ("", "(null)"):
+            continue
+        try:
+            out[path] = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S %z")
+        except ValueError:
+            continue
+    return out
+
+
 def spotlight_last_used(app_path: str) -> datetime | None:
-    """Spotlight's kMDItemLastUsedDate. Often null for apps launched by login items,
-    Spotlight, or the Dock, so it is one signal among several."""
-    if not app_path.endswith(".app"):
-        return None
-    result = subprocess.run(["mdls", "-name", "kMDItemLastUsedDate", "-raw", app_path], capture_output=True, text=True)
-    raw = result.stdout.strip()
-    if result.returncode != 0 or raw in ("", "(null)"):
-        return None
-    try:
-        return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S %z")
-    except ValueError:
-        return None
+    return spotlight_last_used_many([app_path]).get(app_path)
 
 
 def _container_dir(bundle_id: str) -> Path | None:
     direct = LIBRARY / "Containers" / bundle_id
     if direct.exists():
         return direct
-    hits = [h for h in _containers([bundle_id]) if _container_identity(h) == bundle_id]
-    return hits[0] if hits else None
+    return next((path for ident, path in _container_index() if ident == bundle_id), None)
 
 
 def library_last_touched(bundle_id: str, app_name: str) -> datetime | None:
@@ -325,21 +333,33 @@ def last_used(
     app: AppInfo,
     knowledge: dict[str, datetime] | None = None,
     procs: list[str] | None = None,
+    spotlight: dict[str, datetime] | None = None,
 ) -> tuple[datetime | None, bool]:
     """(best last-used estimate, running now). The estimate is the newest of Screen
     Time's usage record, Spotlight's last-used date, and the app's own Library writes.
-    Pass ``knowledge`` and ``procs`` when calling for many apps so each is read once."""
+    Pass ``knowledge``, ``procs`` and ``spotlight`` when calling for many apps so
+    each source is read once — see ``last_used_many``."""
     if not app.app_path.endswith(".app"):
         return None, False
     running = _is_running(Path(app.app_path), procs)
     knowledge = usage_from_knowledge() if knowledge is None else knowledge
+    spotlight = spotlight_last_used_many([app.app_path]) if spotlight is None else spotlight
     signals = [
         knowledge.get(app.bundle_id),
-        spotlight_last_used(app.app_path),
+        spotlight.get(app.app_path),
         library_last_touched(app.bundle_id, Path(app.app_path).stem),
     ]
     dated = [d for d in signals if d is not None]
     return (max(dated) if dated else None), running
+
+
+def last_used_many(apps: list[AppInfo]) -> dict[str, tuple[datetime | None, bool]]:
+    """last_used for a whole list with every shared source read once. Keyed by bundle id."""
+    knowledge = usage_from_knowledge()
+    procs = running_executables()
+    spotlight = spotlight_last_used_many([a.app_path for a in apps])
+    _container_index.cache_clear()
+    return {a.bundle_id: last_used(a, knowledge, procs, spotlight) for a in apps}
 
 
 def age_label(when: datetime | None, now: datetime | None = None, running: bool = False) -> str:

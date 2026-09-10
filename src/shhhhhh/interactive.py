@@ -14,10 +14,8 @@ from shhhhhh.uninstall import (
     age_label,
     execute as execute_uninstall,
     human_size,
-    last_used,
+    last_used_many,
     plan_uninstall,
-    running_executables,
-    usage_from_knowledge,
     remove_from_plist,
 )
 from shhhhhh.plist import (
@@ -570,14 +568,13 @@ class ShhApp(App):
         if self.show_last_used:
             missing = [a for a in self.apps if a.bundle_id not in self.last_used]
             if missing:
-                knowledge = usage_from_knowledge()
-                procs = running_executables()
+                results = last_used_many([a for a in missing if a.app_path.endswith(".app")])
                 for app in missing:
-                    if not app.app_path.endswith(".app"):
+                    if app.bundle_id in results:
+                        when, running = results[app.bundle_id]
+                        self.last_used[app.bundle_id] = age_label(when, running=running)
+                    else:
                         self.last_used[app.bundle_id] = ""
-                        continue
-                    when, running = last_used(app, knowledge, procs)
-                    self.last_used[app.bundle_id] = age_label(when, running=running)
             table.add_column(Text("Last\nused", justify="right"), key="last_used", width=10)
         else:
             table.remove_column("last_used")

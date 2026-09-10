@@ -11,6 +11,7 @@ from shhhhhh.plist import AppInfo
 
 
 def _fake_home(tmp_path: Path, monkeypatch) -> Path:
+    uninstall._container_index.cache_clear()
     home = tmp_path / "home"
     lib = home / "Library"
     monkeypatch.setattr(uninstall, "HOME", home)
@@ -230,3 +231,12 @@ def test_is_running_matches_the_bundle_executable_prefix(tmp_path):
     procs = [str(bundle / "Contents" / "MacOS" / "Widget"), "/usr/sbin/cfprefsd"]
     assert uninstall._is_running(bundle, procs)
     assert not uninstall._is_running(tmp_path / "Other.app", procs)
+
+
+def test_spotlight_many_parses_nul_separated_output():
+    import subprocess
+    fake = subprocess.CompletedProcess([], 0, stdout="2026-09-02 14:15:57 +0000\0(null)\0", stderr="")
+    with patch("shhhhhh.uninstall.subprocess.run", return_value=fake):
+        out = uninstall.spotlight_last_used_many(["/a/One.app", "/a/Two.app", "/a/not-an-app"])
+    assert list(out) == ["/a/One.app"]
+    assert out["/a/One.app"].year == 2026
