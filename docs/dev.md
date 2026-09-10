@@ -66,3 +66,26 @@ The terminal palette: the app runs with `ansi_color=True` and the `ansi-dark` th
 - Ambiguous match warning: if you type `shh sound off Ma` and it matches both Mail and Maps, it silently applies to both. Design doc says it should show matches and ask the user to be specific.
 - No `--version` flag
 - No badges-specific CLI tests (shares code path with sound via factory pattern, low risk)
+
+## Releasing
+
+PyPI first, then the Homebrew tap (the formula downloads the PyPI tarball).
+
+```bash
+# 1. bump version in pyproject.toml, commit, push
+# 2. build
+trash dist; python3.11 -m build --outdir dist .
+# 3. upload — token lives in 1Password: Claude vault, item "PyPI Shh Release Token", field credential
+TWINE_USERNAME=__token__ TWINE_PASSWORD="$(op read 'op://Claude/PyPI Shh Release Token/credential')" \
+  python3.11 -m twine upload dist/shhhhhh-<VERSION>*
+# 4. formula: alexpriest/homebrew-tap Formula/shh.rb — url = the hashed sdist URL from
+#    https://pypi.org/pypi/shhhhhh/<VERSION>/json (strict audit rejects the /source/ shortcut),
+#    sha256 = shasum -a 256 dist/shhhhhh-<VERSION>.tar.gz, resources = every runtime dep's sdist
+#    (click, rich, textual and textual's tree: markdown-it-py, mdurl, pygments, platformdirs,
+#    typing-extensions, linkify-it-py, uc-micro-py, mdit-py-plugins). Name resources by PyPI name.
+# 5. brew audit --strict --formula alexpriest/tap/shh; brew install alexpriest/tap/shh
+# 6. git tag -a v<VERSION>; gh release create v<VERSION> dist/*
+```
+
+On the dev Mac the pip editable install owns `/opt/homebrew/bin/shh`, so the brew formula
+installs unlinked; that is intended — `shh` there tracks the repo, the formula proves the release.
