@@ -46,7 +46,7 @@ shh allow off Slack          # turn an app's notifications off entirely
 shh style persistent Mail    # temporary (banner), persistent (stays), or off
 shh center off --all         # hide from Notification Center
 shh lockscreen off Messages  # hide on the Lock Screen
-shh uninstall "Book Tracker" # app + Library leftovers to the Trash (--dry-run to just look)
+shh uninstall "Book Tracker" # app + Library leftovers to the Trash (--dry-run to look, --keep-files for the app only)
 shh sweep com.dev.gone       # leftovers only, for an app that is already gone
 shh sound off --category media
 shh undo                     # restore previous settings
@@ -57,6 +57,7 @@ shh undo                     # restore previous settings
 | Key | Does |
 |---|---|
 | `↑` `↓` / `k` `j` | move |
+| `x` / `X` | mark this row (and move down) / mark or unmark everything visible; while rows are marked every action below applies to all of them |
 | `space` | notifications on / off |
 | `t` | cycle alert style: temporary → persistent → off |
 | `b` | badge on / off |
@@ -67,7 +68,7 @@ shh undo                     # restore previous settings
 | `/` | filter by name (`esc` clears) |
 | `a` | show / hide Apple system entries (daemons and agents; hidden by default) |
 | `o` | show / hide a Last used column (Spotlight's last-opened date) to spot apps you never open |
-| `U` | uninstall the app under the cursor: the .app plus its Library leftovers move to the Trash after a review; Apple software and running apps are refused |
+| `U` | uninstall the app under the cursor, or every marked app: the .app plus its Library leftovers move to the Trash after a review (`f` in the review keeps the Library files); Apple software and running apps are refused; an app whose .app is already gone just has its entry forgotten |
 | `u` | revert the current row |
 | `enter` | review and apply all staged changes (one backup, one write) |
 | `esc` | discard staged changes |

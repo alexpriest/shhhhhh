@@ -231,8 +231,9 @@ main.add_command(_shown_command("lockscreen", "on the Lock Screen", lambda a: a.
 @main.command("uninstall")
 @click.argument("app")
 @click.option("--dry-run", is_flag=True, help="List what would be trashed and stop")
+@click.option("--keep-files", is_flag=True, help="Trash the .app only; leave its Library files")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
-def uninstall_cmd(app, dry_run, yes):
+def uninstall_cmd(app, dry_run, keep_files, yes):
     """Move an app and its Library leftovers to the Trash, and forget its notifications."""
     from shhhhhh.uninstall import UninstallError, execute, human_size, plan_uninstall, remove_from_plist
 
@@ -255,11 +256,17 @@ def uninstall_cmd(app, dry_run, yes):
         console.print(f"  {plan.app.name}: {plan.blocked}", style="color(243)")
         console.print()
         return
+    plan.keep_files = keep_files
     home = str(Path.home())
     console.print()
-    console.print(f"  {plan.app.name} — {len(plan.paths)} items, {human_size(plan.size)}", style="bold color(250)")
-    for path in plan.paths:
+    if plan.gone:
+        console.print(f"  {plan.app.name} — the .app is already gone; forgetting its notification entry", style="bold color(250)")
+    else:
+        console.print(f"  {plan.app.name} — {len(plan.targets)} items, {human_size(plan.size)}", style="bold color(250)")
+    for path in plan.targets:
         console.print(f"    {str(path).replace(home, '~')}", style="color(245)")
+    if keep_files and len(plan.paths) > len(plan.targets):
+        console.print(f"    (keeping {len(plan.paths) - len(plan.targets)} Library items)", style="color(240)")
     if plan.needs_admin:
         console.print("  Owned by root (an App Store install): the Finder will move it and ask for your password.", style="color(178)")
     console.print()

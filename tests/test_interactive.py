@@ -303,3 +303,111 @@ async def test_U_reviews_then_trashes_and_drops_the_entry(tmp_path):
             assert app.staged[zed.index] == ON | TEMP | SOUND   # staged edit carried across the reload
     with open(plist, "rb") as f:
         assert [a["bundle-id"] for a in plistlib.load(f)["apps"]] == ["com.example.zed"]
+
+
+@pytest.mark.asyncio
+async def test_marks_apply_actions_to_every_marked_row():
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await pilot.press("x", "x")        # mark Arc and Bear, cursor ends on Slack
+        assert app.selected == {0, 1}
+        assert "2 marked" in app._summary_text()
+        await pilot.press("s")             # Arc has no sound, Bear has -> mixed -> all on
+        assert app.staged[0] & SOUND and app.staged[1] & SOUND
+        assert app.staged[2] == app.original[2]   # Slack (cursor) untouched
+        await pilot.press("s")             # all on -> all off
+        assert not (app.staged[0] & SOUND) and not (app.staged[1] & SOUND)
+        await pilot.press("t")             # next style after the cursor row's (Slack: temporary) -> persistent
+        assert style_of(app.staged[0]) == "persistent" and style_of(app.staged[1]) == "persistent"
+        assert style_of(app.staged[2]) == "temporary"
+        await pilot.press("escape", "escape")   # first discards staged, second clears marks
+        await pilot.pause()
+        assert app.selected == set() and app.is_running
+
+
+@pytest.mark.asyncio
+async def test_X_marks_all_visible_then_unmarks():
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await pilot.press("X")
+        assert app.selected == {0, 1, 2}   # tccd is hidden, so not marked
+        await pilot.press("X")
+        assert app.selected == set()
+
+
+@pytest.mark.asyncio
+async def test_U_on_a_gone_app_offers_to_forget_the_entry(tmp_path):
+    import plistlib
+    plist = tmp_path / "usernoted.plist"
+    with open(plist, "wb") as f:
+        plistlib.dump({"apps": [
+            {"bundle-id": "com.example.gone", "flags": ON | TEMP, "path": str(tmp_path / "Gone.app")},
+            {"bundle-id": "com.example.zed", "flags": ON | TEMP, "path": "/Applications/Zed.app"},
+        ]}, f)
+    from shhhhhh.plist import read_apps
+    app = ShhApp(read_apps(plist), plist, tmp_path / ".shh")
+    with patch("shhhhhh.uninstall.subprocess"):
+        async with app.run_test() as pilot:
+            await pilot.press("U")
+            await pilot.pause()
+            assert isinstance(app.screen, UninstallScreen)
+            assert "Forget" in app.screen._title()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert [a.name for a in app.apps] == ["Zed"]
+
+
+@pytest.mark.asyncio
+async def test_f_in_the_review_keeps_library_files(tmp_path):
+    import plistlib
+    plist = tmp_path / "usernoted.plist"
+    bundle = tmp_path / "Widget.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    with open(plist, "wb") as f:
+        plistlib.dump({"apps": [{"bundle-id": "com.example.widget", "flags": ON | TEMP, "path": str(bundle)}]}, f)
+    from shhhhhh.plist import read_apps
+    from shhhhhh.uninstall import UninstallPlan
+    app = ShhApp(read_apps(plist), plist, tmp_path / ".shh")
+    leftovers = [tmp_path / "Library" / "Caches" / "com.example.widget"]
+    with patch("shhhhhh.interactive.plan_uninstall", side_effect=lambda a: UninstallPlan(app=a, paths=[bundle] + leftovers)), \
+         patch("shhhhhh.interactive.execute_uninstall", side_effect=lambda p: list(p.targets)) as ex, \
+         patch("shhhhhh.uninstall.subprocess"):
+        async with app.run_test() as pilot:
+            await pilot.press("U")
+            await pilot.pause()
+            await pilot.press("f")
+            await pilot.pause()
+            assert "kept (app only)" in app.screen._hint()
+            await pilot.press("enter")
+            await pilot.pause()
+            plan = ex.call_args[0][0]
+            assert plan.keep_files and plan.targets == [bundle]
+
+
+@pytest.mark.asyncio
+async def test_batch_uninstall_reviews_all_marked_and_skips_refused(tmp_path):
+    import plistlib
+    plist = tmp_path / "usernoted.plist"
+    a = tmp_path / "A.app"; (a / "Contents" / "MacOS").mkdir(parents=True)
+    b = tmp_path / "B.app"; (b / "Contents" / "MacOS").mkdir(parents=True)
+    with open(plist, "wb") as f:
+        plistlib.dump({"apps": [
+            {"bundle-id": "com.example.a", "flags": ON, "path": str(a)},
+            {"bundle-id": "com.example.b", "flags": ON, "path": str(b)},
+            {"bundle-id": "com.apple.mail", "flags": ON, "path": "/System/Applications/Mail.app"},
+        ]}, f)
+    from shhhhhh.plist import read_apps
+    app = ShhApp(read_apps(plist), plist, tmp_path / ".shh")
+    with patch("shhhhhh.uninstall._is_running", return_value=False), \
+         patch("shhhhhh.interactive.execute_uninstall", side_effect=lambda p: list(p.targets)) as ex, \
+         patch("shhhhhh.uninstall.subprocess"):
+        async with app.run_test() as pilot:
+            await pilot.press("X", "U")
+            await pilot.pause()
+            assert isinstance(app.screen, UninstallScreen)
+            assert len(app.screen.plans) == 2 and app.screen.skipped[0][0] == "Mail"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert ex.call_count == 2
+            assert [x.name for x in app.apps] == ["Mail"]
+            assert app.selected == set()

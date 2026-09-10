@@ -29,10 +29,19 @@ class UninstallPlan:
     paths: list[Path] = field(default_factory=list)
     blocked: str | None = None
     running: bool = False
+    gone: bool = False          # the .app is no longer on disk; only leftovers + the entry remain
+    keep_files: bool = False    # trash the .app only, leave Library files where they are
+
+    @property
+    def targets(self) -> list[Path]:
+        """What execute() will actually move, honouring keep_files."""
+        if self.keep_files:
+            return [] if self.gone else self.paths[:1]
+        return list(self.paths)
 
     @property
     def size(self) -> int:
-        return sum(_size(p) for p in self.paths)
+        return sum(_size(p) for p in self.targets)
 
     @property
     def needs_admin(self) -> list[Path]:
@@ -48,8 +57,6 @@ def blocked_reason(app: AppInfo) -> str | None:
         return "not an app bundle (no .app on disk to remove)"
     if app.app_path.startswith(PROTECTED_PREFIXES):
         return f"lives in a protected location ({app.app_path})"
-    if not Path(app.app_path).exists():
-        return "the .app is already gone; only its notification entry is left"
     return None
 
 
@@ -59,8 +66,12 @@ def plan_uninstall(app: AppInfo) -> UninstallPlan:
     if plan.blocked:
         return plan
     bundle = Path(app.app_path)
-    plan.running = _is_running(bundle)
     _container_index.cache_clear()
+    if not bundle.exists():
+        plan.gone = True
+        plan.paths = library_leftovers(app.bundle_id, bundle.stem)
+        return plan
+    plan.running = _is_running(bundle)
     plan.paths = [bundle] + library_leftovers(app.bundle_id, bundle.stem)
     return plan
 
@@ -210,7 +221,9 @@ def execute(plan: UninstallPlan) -> list[Path]:
     if plan.blocked or plan.running:
         raise RuntimeError(plan.blocked or "app is running — quit it first")
     moved: list[Path] = []
-    for path in plan.paths[1:] + plan.paths[:1]:
+    targets = plan.targets
+    ordered = targets if plan.gone else targets[1:] + targets[:1]
+    for path in ordered:
         try:
             if not _owned_by_me(path):
                 _finder_trash(path)

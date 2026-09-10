@@ -79,7 +79,21 @@ def test_plan_refuses_apple_and_non_bundles(tmp_path, monkeypatch):
     agent = AppInfo(name="thing", bundle_id="com.example.thing", flags=0, index=1, app_path="")
     assert "no .app" in uninstall.plan_uninstall(agent).blocked
     gone = AppInfo(name="Gone", bundle_id="com.example.gone", flags=0, index=2, app_path=str(tmp_path / "Gone.app"))
-    assert "already gone" in uninstall.plan_uninstall(gone).blocked
+    plan = uninstall.plan_uninstall(gone)
+    assert plan.blocked is None and plan.gone and plan.paths == []
+
+
+def test_keep_files_limits_targets_to_the_app(tmp_path, monkeypatch):
+    home = _fake_home(tmp_path, monkeypatch)
+    _scatter(home / "Library")
+    app = _app(tmp_path)
+    with patch("shhhhhh.uninstall._is_running", return_value=False):
+        plan = uninstall.plan_uninstall(app)
+    plan.keep_files = True
+    assert plan.targets == [Path(app.app_path)]
+    moved = uninstall.execute(plan)
+    assert moved == [Path(app.app_path)]
+    assert (home / "Library" / "Application Support" / "Widget").exists()
 
 
 def test_execute_moves_everything_to_trash_and_refuses_running(tmp_path, monkeypatch):
