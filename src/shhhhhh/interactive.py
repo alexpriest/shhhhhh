@@ -28,6 +28,10 @@ from shhhhhh.plist import (
 STYLE_ORDER = ("temporary", "persistent", "off")
 HELP_TEXT = " ↑↓/jk move · space on/off · t style · b badges · s sound · n center · l lock screen · S/B all · u revert · / filter · enter apply · esc discard · q quit"
 COLUMN_KEYS = ("app", "on", "style", "badges", "sound", "center", "lock")
+LEGEND_TEXT = (
+    "  On = notifications allowed at all · Style = temporary banner, persistent alert, or off (nothing on the desktop)\n"
+    "  Badges = red count on the Dock icon · Sound = plays a sound · Notif Center = kept in Notification Center · Lock Screen = shown while locked"
+)
 
 
 def _mark(on: bool) -> str:
@@ -126,6 +130,11 @@ class ShhApp(App):
         padding: 0 2;
         color: $text;
     }
+    #legend {
+        height: auto;
+        padding: 0 2 1 2;
+        color: $text-muted;
+    }
     #change-count {
         height: auto;
         padding: 0 2;
@@ -200,6 +209,7 @@ class ShhApp(App):
     def compose(self) -> ComposeResult:
         yield Static("shh — silence your mac, app by app", id="header-bar")
         yield Static(self._summary_text(), id="summary")
+        yield Static(LEGEND_TEXT, id="legend")
         yield Static("", id="change-count")
         yield Input(placeholder="Filter apps...", id="filter-input")
         yield DataTable(id="app-table", cursor_type="row")
@@ -212,8 +222,8 @@ class ShhApp(App):
         table.add_column("Style", key="style", width=11)
         table.add_column("Badges", key="badges", width=7)
         table.add_column("Sound", key="sound", width=6)
-        table.add_column("Center", key="center", width=7)
-        table.add_column("Lock", key="lock", width=5)
+        table.add_column("Notif Center", key="center", width=13)
+        table.add_column("Lock Screen", key="lock", width=12)
         self._populate_table()
         table.focus()
 
