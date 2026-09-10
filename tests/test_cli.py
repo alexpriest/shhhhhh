@@ -275,3 +275,13 @@ def test_center_and_lockscreen_off_set_inverted_bits(tmp_path):
     result, apps = _invoke(tmp_path, ["lockscreen", "off", "--all", "--yes"])
     assert result.exit_code == 0, result.output
     assert all(a["flags"] & (1 << 12) for a in apps)
+
+
+def test_list_hides_system_entries_unless_asked(tmp_path):
+    plist = _make_plist(STYLE_APPS + [{"bundle-id": "com.apple.tccd", "flags": 0}], tmp_path)
+    runner = CliRunner()
+    with patch("shhhhhh.cli.PLIST_PATH", plist):
+        default = runner.invoke(main, ["list", "--flat"]).output
+        with_system = runner.invoke(main, ["list", "--flat", "--system"]).output
+    assert "tccd" not in default and "1 Apple system entries hidden" in default
+    assert "tccd" in with_system

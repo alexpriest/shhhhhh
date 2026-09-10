@@ -26,7 +26,7 @@ from shhhhhh.plist import (
 )
 
 STYLE_ORDER = ("temporary", "persistent", "off")
-HELP_TEXT = " ↑↓ move · space on/off · t style · b badge · s sound · n center · l lock · S/B all · / filter · enter apply · ? help · q quit"
+HELP_TEXT = " ↑↓ move · space on/off · t style · b badge · s sound · n center · l lock · S/B all · a system entries · / filter · enter apply · ? help · q quit"
 COLUMN_KEYS = ("app", "on", "style", "badges", "sound", "center", "lock")
 TOGGLE_WIDTH = 8
 HELP_LINES = [
@@ -44,6 +44,7 @@ HELP_LINES = [
     "  t             cycle style               b  s   badge / sound",
     "  n  l          notif center / lock       S  B   sound / badge for every app",
     "  u             revert this row           /      filter by name (esc clears)",
+    "  a             show / hide Apple system entries (daemons and agents, hidden by default)",
     "  enter         review and apply          esc    discard staged changes",
     "  q             quit                      ?      this help",
     "",
@@ -245,10 +246,17 @@ class ShhApp(App):
         # Whole flag masks, keyed by plist index: what is on disk vs what the user has staged.
         self.original: dict[int, int] = {a.index: a.flags for a in apps}
         self.staged: dict[int, int] = dict(self.original)
-        self.visible_apps: list[AppInfo] = list(apps)
-        self.applied = False
+        self.show_system = False
         self.filter_text = ""
+        self.visible_apps: list[AppInfo] = self._compute_visible()
+        self.applied = False
         self._quit_armed = False
+
+    def _compute_visible(self) -> list[AppInfo]:
+        apps = self.apps if self.show_system else [a for a in self.apps if not a.system]
+        if self.filter_text:
+            apps = [a for a in apps if self.filter_text in a.name.lower()]
+        return apps
 
     # ---- layout -----------------------------------------------------------
 
@@ -275,11 +283,18 @@ class ShhApp(App):
     # ---- state ------------------------------------------------------------
 
     def _summary_text(self) -> str:
-        total = len(self.apps)
-        on = sum(1 for f in self.staged.values() if has_flag(f, ALLOW_BIT))
-        with_sound = sum(1 for f in self.staged.values() if has_flag(f, SOUND_BIT))
-        with_badges = sum(1 for f in self.staged.values() if has_flag(f, BADGES_BIT))
-        return f"{total} apps · {on} on · {with_sound} with sound · {with_badges} with badges"
+        shown = self.apps if self.show_system else [a for a in self.apps if not a.system]
+        flags = [self.staged[a.index] for a in shown]
+        on = sum(1 for f in flags if has_flag(f, ALLOW_BIT))
+        with_sound = sum(1 for f in flags if has_flag(f, SOUND_BIT))
+        with_badges = sum(1 for f in flags if has_flag(f, BADGES_BIT))
+        hidden = len(self.apps) - len(shown)
+        tail = (
+            f"{hidden} system entries hidden · a to show" if hidden
+            else ("showing system entries · a to hide" if self.show_system else "")
+        )
+        line = f"{len(shown)} apps · {on} on · {with_sound} with sound · {with_badges} with badges"
+        return f"{line}   ·   {tail}" if tail else line
 
     def _pending_changes(self) -> list[tuple[AppInfo, int, int]]:
         return [
@@ -393,6 +408,7 @@ class ShhApp(App):
             "S": lambda: self._set_all(SOUND_BIT),
             "B": lambda: self._set_all(BADGES_BIT),
             "u": self._revert_row,
+            "a": self._toggle_system,
             "j": table.action_cursor_down,
             "down": table.action_cursor_down,
             "k": table.action_cursor_up,
@@ -451,15 +467,21 @@ class ShhApp(App):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self.filter_text = event.value.lower()
-        self.visible_apps = [a for a in self.apps if self.filter_text in a.name.lower()] if self.filter_text else list(self.apps)
+        self.visible_apps = self._compute_visible()
         self._populate_table()
+
+    def _toggle_system(self) -> None:
+        self.show_system = not self.show_system
+        self.visible_apps = self._compute_visible()
+        self._populate_table()
+        self._update_summary()
 
     def _clear_filter(self) -> None:
         filter_input = self.query_one("#filter-input", Input)
         filter_input.value = ""
         filter_input.remove_class("visible")
         self.filter_text = ""
-        self.visible_apps = list(self.apps)
+        self.visible_apps = self._compute_visible()
         self._populate_table()
         self.query_one("#app-table", DataTable).focus()
 

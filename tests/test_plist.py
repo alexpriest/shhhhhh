@@ -183,3 +183,12 @@ def test_lock_screen_and_center_are_inverted_bits():
     assert set_lock_screen(hidden.flags, True) == CLAUDE_FLAGS | (1 << 0) | (1 << 8)
     assert set_center(hidden.flags, True) == CLAUDE_FLAGS | (1 << 12)
     assert set_center(set_lock_screen(CLAUDE_FLAGS, False), False) == hidden.flags
+
+
+def test_is_system_hides_daemons_but_keeps_real_apple_apps():
+    from shhhhhh.plist import is_system
+    assert is_system("com.apple.tccd", "")
+    assert is_system("com.apple.imagent", "/System/Library/PrivateFrameworks/IMCore.framework/imagent.app")
+    assert not is_system("com.apple.mail", "/System/Applications/Mail.app")
+    assert not is_system("com.apple.iCal", "/System/Library/UserNotifications/Bundles/com.apple.iCal.bundle")
+    assert not is_system("com.tinyspeck.slackmacgap", "/Applications/Slack.app")

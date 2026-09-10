@@ -116,12 +116,17 @@ def main(ctx):
 
 @main.command("list")
 @click.option("--flat", is_flag=True, help="Flat alphabetical list")
-def list_cmd(flat):
+@click.option("--system", "with_system", is_flag=True, help="Include Apple system daemons and agents")
+def list_cmd(flat, with_system):
     """Show all apps and their notification settings."""
-    apps = read_apps(PLIST_PATH)
+    everything = read_apps(PLIST_PATH)
+    apps = everything if with_system else [a for a in everything if not a.system]
     print_logo()
     print_tagline()
     print_summary(apps)
+    hidden = len(everything) - len(apps)
+    if hidden:
+        console.print(f"  {hidden} Apple system entries hidden · add --system to include them", style="color(240)")
     if flat:
         print_app_table(apps)
     else:

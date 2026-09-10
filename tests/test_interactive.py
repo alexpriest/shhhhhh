@@ -15,6 +15,7 @@ TEMP = 1 << 3
 
 def _make_apps():
     return [
+        AppInfo(name="tccd", bundle_id="com.apple.tccd", flags=ON | TEMP | BADGE, index=3),
         AppInfo(name="Arc", bundle_id="company.thebrowser.Browser", flags=0, index=0),          # off, style off, no badge, no sound
         AppInfo(name="Bear", bundle_id="net.shinyfrog.bear", flags=ON | TEMP | BADGE | SOUND, index=1),
         AppInfo(name="Slack", bundle_id="com.tinyspeck.slackmacgap", flags=ON | TEMP | BADGE | SOUND, index=2),
@@ -233,3 +234,16 @@ async def test_question_mark_opens_help_and_any_key_closes_it():
         await pilot.pause()
         assert not isinstance(app.screen, HelpScreen)
         assert app.staged == app.original   # the closing key does not toggle anything
+
+
+@pytest.mark.asyncio
+async def test_system_entries_hidden_until_a():
+    app = _make_app()
+    async with app.run_test() as pilot:
+        assert [a.name for a in app.visible_apps] == ["Arc", "Bear", "Slack"]
+        assert "1 system entries hidden · a to show" in app._summary_text()
+        await pilot.press("a")
+        assert sorted(a.name for a in app.visible_apps) == ["Arc", "Bear", "Slack", "tccd"]
+        assert "a to hide" in app._summary_text()
+        await pilot.press("a")
+        assert len(app.visible_apps) == 3

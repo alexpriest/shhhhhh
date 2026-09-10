@@ -43,6 +43,20 @@ FRIENDLY_NAMES: dict[str, str] = {
     "com.apple.PlatformSSO.notifications": "Platform SSO",
 }
 
+# Apple entries that are real apps a person would recognise, even though the
+# plist registers them through a notification bundle rather than an .app path.
+USER_FACING_APPLE_IDS = {
+    "com.apple.iCal",
+    "com.apple.reminders",
+    "com.apple.Home",
+    "com.apple.Passbook",
+    "com.apple.AppStore",
+    "com.apple.gamecenter",
+    "com.apple.ShazamNotifications",
+    "com.apple.tips",
+    "com.apple.SoftwareUpdateNotification",
+}
+
 # Suffixes to strip when auto-extracting names from bundle IDs
 _STRIP_SUFFIXES = [
     ".notifications", ".usernotification", ".usernotifications",
@@ -58,6 +72,10 @@ class AppInfo:
     index: int  # position in the plist apps array
     app_path: str = ""
     category: str = "Other"
+
+    @property
+    def system(self) -> bool:
+        return is_system(self.bundle_id, self.app_path)
 
     @property
     def sound(self) -> bool:
@@ -86,6 +104,14 @@ class AppInfo:
 
 def has_flag(flags: int, bit: int) -> bool:
     return bool(flags & (1 << bit))
+
+
+def is_system(bundle_id: str, app_path: str) -> bool:
+    """True for Apple daemons and framework agents: com.apple.* entries that are
+    not a real app (no .app path, or an .app buried inside a framework)."""
+    if not bundle_id.startswith("com.apple.") or bundle_id in USER_FACING_APPLE_IDS:
+        return False
+    return not app_path.endswith(".app") or "Frameworks/" in app_path
 
 
 def _humanize_bundle_id(bundle_id: str) -> str:

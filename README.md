@@ -30,7 +30,7 @@ If you skip this step, `shh` will guide you through it on first run.
 
 ```bash
 shh                          # interactive: arrow through apps, toggle, apply
-shh list                     # show all apps + settings (grouped; --flat for A–Z)
+shh list                     # show all apps + settings (grouped; --flat for A–Z, --system to include Apple daemons)
 shh sound off --all          # mute everything
 shh sound on Mail Messages   # unmute specific apps
 shh badges off --all         # remove all badge icons
@@ -55,6 +55,7 @@ shh undo                     # restore previous settings
 | `l` | show on Lock Screen on / off |
 | `S` / `B` | sound / badges for every app (mutes all if any is on, else unmutes all) |
 | `/` | filter by name (`esc` clears) |
+| `a` | show / hide Apple system entries (daemons and agents; hidden by default) |
 | `u` | revert the current row |
 | `enter` | review and apply all staged changes (one backup, one write) |
 | `esc` | discard staged changes |
