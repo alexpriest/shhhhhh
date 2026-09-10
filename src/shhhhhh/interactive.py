@@ -99,9 +99,6 @@ class ShhApp(App):
 
     TITLE = "shh"
     CSS = """
-    Screen {
-        background: $surface;
-    }
     #header-bar {
         height: auto;
         padding: 1 2;
@@ -133,14 +130,16 @@ class ShhApp(App):
         dock: bottom;
         padding: 0 2;
         color: $text-muted;
-        background: $surface;
     }
     """
 
     BINDINGS = []
 
     def __init__(self, apps: list[AppInfo], plist_path: Path, backup_dir: Path) -> None:
-        super().__init__()
+        # ansi_color makes Textual draw with the terminal's own palette and
+        # background, so the screen follows whatever theme the terminal is using.
+        super().__init__(ansi_color=True)
+        self.theme = "ansi-dark"
         self.apps = apps
         self.plist_path = plist_path
         self.backup_dir = backup_dir
