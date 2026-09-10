@@ -205,13 +205,13 @@ def test_last_used_takes_the_newest_signal(tmp_path, monkeypatch):
     prefs.parent.mkdir(parents=True); prefs.write_bytes(b"x")
     three_days_ago = time.time() - 3 * 86400
     os.utime(prefs, (three_days_ago, three_days_ago))
-    with patch("shhhhhh.uninstall.spotlight_last_used", return_value=None), \
+    with patch("shhhhhh.uninstall.spotlight_last_used_many", return_value={}), \
          patch("shhhhhh.uninstall._is_running", return_value=False):
         when, running = uninstall.last_used(app)
     assert not running
     assert uninstall.age_label(when) == "3d ago"
     # Spotlight newer still wins
-    with patch("shhhhhh.uninstall.spotlight_last_used", return_value=datetime.now(timezone.utc)), \
+    with patch("shhhhhh.uninstall.spotlight_last_used_many", return_value={str(tmp_path / "Applications" / "Widget.app"): datetime.now(timezone.utc)}), \
          patch("shhhhhh.uninstall._is_running", return_value=True):
         when, running = uninstall.last_used(app)
     assert running and uninstall.age_label(when, running=running) == "running"
@@ -221,7 +221,7 @@ def test_last_used_with_no_signals_is_none(tmp_path, monkeypatch):
     _fake_home(tmp_path, monkeypatch)
     monkeypatch.setattr(uninstall, "KNOWLEDGE_DB", tmp_path / "missing.db")
     app = _app(tmp_path)
-    with patch("shhhhhh.uninstall.spotlight_last_used", return_value=None), \
+    with patch("shhhhhh.uninstall.spotlight_last_used_many", return_value={}), \
          patch("shhhhhh.uninstall._is_running", return_value=False):
         assert uninstall.last_used(app) == (None, False)
 
