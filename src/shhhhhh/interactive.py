@@ -11,18 +11,23 @@ from textual.widgets import DataTable, Input, Static
 from shhhhhh.plist import (
     ALLOW_BIT,
     BADGES_BIT,
+    CENTER_HIDE_BITS,
+    LOCK_SCREEN_HIDE_BIT,
     SOUND_BIT,
     AppInfo,
     backup_plist,
     has_flag,
+    set_center,
     set_flag,
+    set_lock_screen,
     set_style,
     style_of,
     write_apps,
 )
 
 STYLE_ORDER = ("temporary", "persistent", "off")
-HELP_TEXT = " ↑↓/jk move · space on/off · t style · b badges · s sound · S/B all · u revert · / filter · enter apply · esc discard · q quit"
+HELP_TEXT = " ↑↓/jk move · space on/off · t style · b badges · s sound · n center · l lock screen · S/B all · u revert · / filter · enter apply · esc discard · q quit"
+COLUMN_KEYS = ("app", "on", "style", "badges", "sound", "center", "lock")
 
 
 def _mark(on: bool) -> str:
@@ -40,7 +45,19 @@ def describe_change(name: str, old: int, new: int) -> str:
         parts.append(f"badges {_mark(has_flag(old, BADGES_BIT))} → {_mark(has_flag(new, BADGES_BIT))}")
     if has_flag(old, SOUND_BIT) != has_flag(new, SOUND_BIT):
         parts.append(f"sound {_mark(has_flag(old, SOUND_BIT))} → {_mark(has_flag(new, SOUND_BIT))}")
+    if _center(old) != _center(new):
+        parts.append(f"notification center {_mark(_center(old))} → {_mark(_center(new))}")
+    if _lock(old) != _lock(new):
+        parts.append(f"lock screen {_mark(_lock(old))} → {_mark(_lock(new))}")
     return f"  {name:<30} {', '.join(parts)}"
+
+
+def _center(flags: int) -> bool:
+    return not any(has_flag(flags, b) for b in CENTER_HIDE_BITS)
+
+
+def _lock(flags: int) -> bool:
+    return not has_flag(flags, LOCK_SCREEN_HIDE_BIT)
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -124,6 +141,33 @@ class ShhApp(App):
     DataTable {
         height: 1fr;
         margin: 0 1;
+        scrollbar-size-horizontal: 0;
+        scrollbar-size-vertical: 1;
+        scrollbar-background: ansi_default;
+        scrollbar-background-hover: ansi_default;
+        scrollbar-background-active: ansi_default;
+        scrollbar-color: ansi_bright_black;
+        scrollbar-color-hover: ansi_bright_black;
+        scrollbar-color-active: ansi_bright_black;
+    }
+    DataTable > .datatable--header {
+        background: ansi_default;
+        color: ansi_default;
+        text-style: bold;
+    }
+    DataTable > .datatable--header-hover,
+    DataTable > .datatable--header-cursor {
+        background: ansi_default;
+        color: ansi_default;
+        text-style: bold;
+    }
+    DataTable > .datatable--cursor {
+        background: ansi_default;
+        color: ansi_default;
+        text-style: reverse;
+    }
+    DataTable > .datatable--hover {
+        background: ansi_default;
     }
     #footer-help {
         height: auto;
@@ -168,6 +212,8 @@ class ShhApp(App):
         table.add_column("Style", key="style", width=11)
         table.add_column("Badges", key="badges", width=7)
         table.add_column("Sound", key="sound", width=6)
+        table.add_column("Center", key="center", width=7)
+        table.add_column("Lock", key="lock", width=5)
         self._populate_table()
         table.focus()
 
@@ -220,12 +266,20 @@ class ShhApp(App):
         on_cell = Text("●" if allowed else "○", style="bold yellow" if allow_changed else ("green" if allowed else "dim"))
         style = style_of(new)
         style_cell = Text(style, style="bold yellow" if style_of(old) != style else ("" if style != "off" else "dim"))
+        def shown(fn) -> Text:
+            on = fn(new)
+            if fn(old) != on:
+                return Text("✓", style="bold yellow") if on else Text("✗", style="yellow")
+            return Text("✓", style="green") if on else Text("✗", style="dim")
+
         return (
             Text(app.name, style="bold" if modified else ""),
             on_cell,
             style_cell,
             check(BADGES_BIT),
             check(SOUND_BIT),
+            shown(_center),
+            shown(_lock),
         )
 
     def _populate_table(self) -> None:
@@ -239,7 +293,7 @@ class ShhApp(App):
             return
         table = self.query_one("#app-table", DataTable)
         row_key = str(app.index)
-        for column, value in zip(("app", "on", "style", "badges", "sound"), self._cells(app)):
+        for column, value in zip(COLUMN_KEYS, self._cells(app)):
             table.update_cell(row_key, column, value)
 
     def _get_selected_app(self) -> AppInfo | None:
@@ -278,6 +332,8 @@ class ShhApp(App):
             "b": lambda: self._toggle_bit(BADGES_BIT),
             "space": lambda: self._toggle_bit(ALLOW_BIT),
             "t": self._cycle_style,
+            "n": self._toggle_center,
+            "l": self._toggle_lock_screen,
             "S": lambda: self._set_all(SOUND_BIT),
             "B": lambda: self._set_all(BADGES_BIT),
             "u": self._revert_row,
@@ -300,6 +356,18 @@ class ShhApp(App):
         if app:
             flags = self.staged[app.index]
             self._stage(app, set_flag(flags, bit, not has_flag(flags, bit)))
+
+    def _toggle_center(self) -> None:
+        app = self._get_selected_app()
+        if app:
+            flags = self.staged[app.index]
+            self._stage(app, set_center(flags, not _center(flags)))
+
+    def _toggle_lock_screen(self) -> None:
+        app = self._get_selected_app()
+        if app:
+            flags = self.staged[app.index]
+            self._stage(app, set_lock_screen(flags, not _lock(flags)))
 
     def _cycle_style(self) -> None:
         app = self._get_selected_app()

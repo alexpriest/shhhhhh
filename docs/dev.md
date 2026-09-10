@@ -53,15 +53,13 @@ The tool reads `~/Library/Group Containers/group.com.apple.usernoted/Library/Pre
 
 Verified against System Settings on macOS 26 on 2026-09-10 (Claude vs CleanShot X differ only in bit 25 and read "Badges, Desktop" vs "Off"; Bartleby with bit 3 reads Temporary; App Store with bit 4 still counts as Desktop).
 
-Observed by clicking the three checkboxes on Bartleby's page and re-reading the plist (same day), not yet on any write path:
+Confirmed by clicking the three checkboxes on Bartleby's page and re-reading the plist (same day):
 
-- Lock Screen unchecked → bit 12 set (inverted, as the old ncprefs docs say)
-- Notification Center unchecked → bits 0 and 8 set; bit 13 did not move (so bit 13 is not that checkbox)
-- Desktop unchecked → bit 6 set, bits 3/4 untouched (so the alert style survives; `style off` clearing 3/4 is what a few system entries carry, not what the checkbox writes)
+- Lock Screen unchecked → bit 12 set (inverted, as the old ncprefs docs say) — `l` / `shh lockscreen`
+- Notification Center unchecked → bits 0 and 8 set together; bit 13 did not move — `n` / `shh center` writes both
+- Desktop unchecked → bit 3 cleared and bit 6 set. Bit 6 looks like "the style was Temporary" memory so re-checking restores it (Beeper carries 3+6 and shows Desktop checked). `shh` never writes bit 6; `style off` just clears 3/4.
 
-Open question before wiring d/n/l keys: Beeper carries bit 6 yet the list summary read "Badges, Desktop"; confirm on its page.
-
-After modifying flags, it restarts `usernoted` via `killall usernoted` to apply changes. A timestamped backup is saved to `~/.shh/` before every write.
+The terminal palette: the app runs with `ansi_color=True` and the `ansi-dark` theme, so every colour is an ANSI name and the terminal's own theme (light or dark) shows through. Component CSS on the DataTable zeroes the header/cursor backgrounds and hides the horizontal scrollbar for the same reason.
 
 ## Known gaps (v2)
 

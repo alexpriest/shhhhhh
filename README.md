@@ -36,6 +36,8 @@ shh sound on Mail Messages   # unmute specific apps
 shh badges off --all         # remove all badge icons
 shh allow off Slack          # turn an app's notifications off entirely
 shh style persistent Mail    # temporary (banner), persistent (stays), or off
+shh center off --all         # hide from Notification Center
+shh lockscreen off Messages  # hide on the Lock Screen
 shh sound off --category media
 shh undo                     # restore previous settings
 ```
@@ -49,6 +51,8 @@ shh undo                     # restore previous settings
 | `t` | cycle alert style: temporary → persistent → off |
 | `b` | badge on / off |
 | `s` | sound on / off |
+| `n` | show in Notification Center on / off |
+| `l` | show on Lock Screen on / off |
 | `S` / `B` | sound / badges for every app (mutes all if any is on, else unmutes all) |
 | `/` | filter by name (`esc` clears) |
 | `u` | revert the current row |
@@ -64,7 +68,7 @@ Nothing is written until you confirm on `enter`; changed cells show in yellow.
 
 `shh` reads and writes macOS notification preferences directly from the `usernoted` plist, then restarts the daemon to apply changes. A backup is automatically created before every change.
 
-Bits it touches in each app's `flags`: 1 badge, 2 sound, 3 temporary, 4 persistent, 25 allow. Everything else is left exactly as found.
+Bits it touches in each app's `flags`: 1 badge, 2 sound, 3 temporary, 4 persistent, 25 allow, and the inverted "hide" bits 12 (Lock Screen) and 0+8 (Notification Center). Everything else is left exactly as found.
 
 ## Requirements
 

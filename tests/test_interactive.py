@@ -208,3 +208,15 @@ def test_describe_change_names_every_field():
     assert "style temporary → persistent" in line
     assert "badges ✓ → ✗" in line
     assert "sound" not in line
+
+
+@pytest.mark.asyncio
+async def test_n_and_l_toggle_center_and_lock_screen_inverted_bits():
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await pilot.press("down", "n")
+        assert app.staged[1] & (1 << 0) and app.staged[1] & (1 << 8)   # hidden from Notification Center
+        await pilot.press("l")
+        assert app.staged[1] & (1 << 12)                              # hidden on Lock Screen
+        await pilot.press("n", "l")
+        assert app.staged[1] == app.original[1]

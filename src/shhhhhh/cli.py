@@ -11,7 +11,9 @@ from shhhhhh.plist import (
     ALLOW_BIT,
     STYLES,
     read_apps,
+    set_center,
     set_flag,
+    set_lock_screen,
     set_style,
     write_apps,
     backup_plist,
@@ -174,6 +176,51 @@ def _toggle_command(setting: str):
 main.add_command(_toggle_command("sound"))
 main.add_command(_toggle_command("badges"))
 main.add_command(_toggle_command("allow"))
+
+
+def _shown_command(name: str, label: str, getter, setter):
+    """on/off command for the inverted-bit settings (Notification Center, Lock Screen)."""
+
+    @click.command(name)
+    @click.argument("state", type=click.Choice(["on", "off"]))
+    @click.argument("apps", nargs=-1)
+    @click.option("--all", "all_apps", is_flag=True, help="Apply to all apps")
+    @click.option("--category", "category_name", default=None, help="Apply to all apps in a category")
+    @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+    def cmd(state, apps, all_apps, category_name, yes):
+        shown = state == "on"
+        app_list = read_apps(PLIST_PATH)
+        if all_apps:
+            targets = app_list
+        elif category_name:
+            targets = [a for a in app_list if a.category.lower() == category_name.lower()]
+        elif apps:
+            targets = _match_apps(app_list, apps)
+        else:
+            raise click.UsageError("Specify app names, --category, or --all")
+        if not targets:
+            console.print()
+            console.print("  No apps matched", style="color(243)")
+            console.print()
+            return
+        changes = [a for a in targets if getter(a) != shown]
+        if not changes:
+            print_logo()
+            print_result(f"All {len(targets)} apps already {'shown' if shown else 'hidden'} {label}")
+            return
+        if (all_apps or category_name) and not yes:
+            click.confirm(f"  {'Show' if shown else 'Hide'} {len(changes)} apps {label}?", abort=True)
+        backup_plist(PLIST_PATH, BACKUP_DIR)
+        write_apps(PLIST_PATH, {a.index: setter(a.flags, shown) for a in changes})
+        print_logo()
+        print_result(f"{'Shown' if shown else 'Hidden'} {label} for {len(changes)} apps", "shh undo")
+
+    cmd.help = f"Show or hide notifications {label}."
+    return cmd
+
+
+main.add_command(_shown_command("center", "in Notification Center", lambda a: a.center, set_center))
+main.add_command(_shown_command("lockscreen", "on the Lock Screen", lambda a: a.lock_screen, set_lock_screen))
 
 
 @main.command("style")

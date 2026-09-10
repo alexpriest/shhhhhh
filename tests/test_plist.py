@@ -172,3 +172,14 @@ def test_humanize_does_not_return_empty_for_bare_suffix_component():
     from shhhhhh.plist import _humanize_bundle_id
     assert _humanize_bundle_id("com.apple.ecosystem.notifications") == "ecosystem"
     assert _humanize_bundle_id("com.apple.ScreenTimeEnabledNotifications") == "Screen Time Enabled"
+
+
+def test_lock_screen_and_center_are_inverted_bits():
+    from shhhhhh.plist import set_center, set_lock_screen
+    on = AppInfo("Bartleby", "b", CLAUDE_FLAGS, 0)
+    assert on.lock_screen and on.center
+    hidden = AppInfo("Bartleby", "b", CLAUDE_FLAGS | (1 << 12) | (1 << 0) | (1 << 8), 0)
+    assert not hidden.lock_screen and not hidden.center
+    assert set_lock_screen(hidden.flags, True) == CLAUDE_FLAGS | (1 << 0) | (1 << 8)
+    assert set_center(hidden.flags, True) == CLAUDE_FLAGS | (1 << 12)
+    assert set_center(set_lock_screen(CLAUDE_FLAGS, False), False) == hidden.flags

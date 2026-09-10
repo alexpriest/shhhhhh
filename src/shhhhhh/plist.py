@@ -21,6 +21,11 @@ SOUND_BIT = 2
 TEMPORARY_BIT = 3    # Alert style: Temporary (a banner that goes away)
 PERSISTENT_BIT = 4   # Alert style: Persistent (stays until dismissed)
 ALLOW_BIT = 25       # Allow notifications
+# Inverted: the bit is SET when the box is UNchecked. Lock Screen = bit 12 (documented,
+# and confirmed by toggling Bartleby's box on 2026-09-10). Notification Center: the same
+# toggle set bits 0 and 8 together and left 13 alone, so both are treated as one switch.
+LOCK_SCREEN_HIDE_BIT = 12
+CENTER_HIDE_BITS = (0, 8)
 STYLES = ("off", "temporary", "persistent")
 
 # Bundle IDs where the auto-extracted name would be wrong or unclear
@@ -69,6 +74,14 @@ class AppInfo:
     @property
     def style(self) -> str:
         return style_of(self.flags)
+
+    @property
+    def lock_screen(self) -> bool:
+        return not has_flag(self.flags, LOCK_SCREEN_HIDE_BIT)
+
+    @property
+    def center(self) -> bool:
+        return not any(has_flag(self.flags, b) for b in CENTER_HIDE_BITS)
 
 
 def has_flag(flags: int, bit: int) -> bool:
@@ -156,6 +169,16 @@ def set_style(flags: int, style: str) -> int:
         flags |= 1 << TEMPORARY_BIT
     elif style == "persistent":
         flags |= 1 << PERSISTENT_BIT
+    return flags
+
+
+def set_lock_screen(flags: int, shown: bool) -> int:
+    return set_flag(flags, LOCK_SCREEN_HIDE_BIT, not shown)
+
+
+def set_center(flags: int, shown: bool) -> int:
+    for bit in CENTER_HIDE_BITS:
+        flags = set_flag(flags, bit, not shown)
     return flags
 
 

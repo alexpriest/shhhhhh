@@ -266,3 +266,12 @@ def test_list_shows_on_and_style_columns(tmp_path):
     result, _ = _invoke(tmp_path, ["list", "--flat"])
     assert "Style" in result.output
     assert "temporary" in result.output
+
+
+def test_center_and_lockscreen_off_set_inverted_bits(tmp_path):
+    result, apps = _invoke(tmp_path, ["center", "off", "Slack"])
+    assert result.exit_code == 0, result.output
+    assert apps[0]["flags"] & (1 << 0) and apps[0]["flags"] & (1 << 8)
+    result, apps = _invoke(tmp_path, ["lockscreen", "off", "--all", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert all(a["flags"] & (1 << 12) for a in apps)
