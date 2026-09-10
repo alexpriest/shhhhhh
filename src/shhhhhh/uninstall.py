@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import plistlib
 import shutil
+import sqlite3
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -129,6 +130,15 @@ def library_leftovers(bundle_id: str, app_name: str) -> list[Path]:
     return found
 
 
+def _container_identity(entry: Path) -> str:
+    meta = entry / ".com.apple.containermanagerd.metadata.plist"
+    try:
+        with open(meta, "rb") as f:
+            return plistlib.load(f).get("MCMMetadataIdentifier") or entry.name
+    except Exception:
+        return entry.name
+
+
 def _containers(ids: list[str]) -> list[Path]:
     root = LIBRARY / "Containers"
     if not root.exists():
@@ -153,9 +163,16 @@ def _owned_by_me(path: Path) -> bool:
         return True
 
 
-def _is_running(bundle: Path) -> bool:
-    result = subprocess.run(["pgrep", "-f", str(bundle / "Contents/MacOS/")], capture_output=True)
-    return result.returncode == 0
+def running_executables() -> list[str]:
+    """Command paths of every running process, one snapshot."""
+    result = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True)
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _is_running(bundle: Path, procs: list[str] | None = None) -> bool:
+    prefix = str(bundle / "Contents" / "MacOS") + "/"
+    procs = running_executables() if procs is None else procs
+    return any(p.startswith(prefix) for p in procs)
 
 
 def _size(path: Path) -> int:
@@ -229,8 +246,30 @@ def remove_from_plist(plist_path: Path, bundle_id: str, restart: bool = True) ->
         subprocess.run(["killall", "usernoted"], capture_output=True)
 
 
-def last_used(app_path: str) -> datetime | None:
-    """Spotlight's last-used date for an app bundle, or None if it has never been opened."""
+KNOWLEDGE_DB = LIBRARY / "Application Support" / "Knowledge" / "knowledgeC.db"
+_COCOA_EPOCH = 978307200  # 2001-01-01 in Unix seconds
+
+
+def usage_from_knowledge() -> dict[str, datetime]:
+    """Last app-usage start per bundle id from Screen Time's knowledgeC.db (about the
+    last four weeks; needs Full Disk Access, which shh already has). {} if unreadable."""
+    if not KNOWLEDGE_DB.exists():
+        return {}
+    try:
+        con = sqlite3.connect(f"file:{KNOWLEDGE_DB}?mode=ro", uri=True)
+        rows = con.execute(
+            "SELECT ZVALUESTRING, MAX(ZSTARTDATE) FROM ZOBJECT "
+            "WHERE ZSTREAMNAME = '/app/usage' AND ZVALUESTRING IS NOT NULL GROUP BY ZVALUESTRING"
+        ).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return {}
+    return {bid: datetime.fromtimestamp(when + _COCOA_EPOCH, tz=timezone.utc) for bid, when in rows if when}
+
+
+def spotlight_last_used(app_path: str) -> datetime | None:
+    """Spotlight's kMDItemLastUsedDate. Often null for apps launched by login items,
+    Spotlight, or the Dock, so it is one signal among several."""
     if not app_path.endswith(".app"):
         return None
     result = subprocess.run(["mdls", "-name", "kMDItemLastUsedDate", "-raw", app_path], capture_output=True, text=True)
@@ -243,9 +282,71 @@ def last_used(app_path: str) -> datetime | None:
         return None
 
 
-def age_label(when: datetime | None, now: datetime | None = None) -> str:
+def _container_dir(bundle_id: str) -> Path | None:
+    direct = LIBRARY / "Containers" / bundle_id
+    if direct.exists():
+        return direct
+    hits = [h for h in _containers([bundle_id]) if _container_identity(h) == bundle_id]
+    return hits[0] if hits else None
+
+
+def library_last_touched(bundle_id: str, app_name: str) -> datetime | None:
+    """Newest write among files only the app itself produces when it runs: its
+    preferences plist, its saved window state, its own HTTP storage — inside its
+    sandbox container when it has one. Deliberately ignores updaters, CloudKit sync
+    caches, widget and extension containers, and directory mtimes, all of which
+    move without the app being opened."""
+    roots = [LIBRARY]
+    container = _container_dir(bundle_id)
+    if container is not None:
+        roots.append(container / "Data" / "Library")
+    files: list[Path] = []
+    for root in roots:
+        files.append(root / "Preferences" / f"{bundle_id}.plist")
+        state = root / "Saved Application State" / f"{bundle_id}.savedState"
+        if state.is_dir():
+            files += [f for f in state.iterdir() if f.is_file()]
+        files.append(root / "HTTPStorages" / f"{bundle_id}.binarycookies")
+        storage = root / "HTTPStorages" / bundle_id
+        if storage.is_dir():
+            files += [f for f in storage.iterdir() if f.is_file()]
+    newest: float | None = None
+    for f in files:
+        try:
+            m = f.lstat().st_mtime
+        except OSError:
+            continue
+        if newest is None or m > newest:
+            newest = m
+    return datetime.fromtimestamp(newest, tz=timezone.utc) if newest else None
+
+
+def last_used(
+    app: AppInfo,
+    knowledge: dict[str, datetime] | None = None,
+    procs: list[str] | None = None,
+) -> tuple[datetime | None, bool]:
+    """(best last-used estimate, running now). The estimate is the newest of Screen
+    Time's usage record, Spotlight's last-used date, and the app's own Library writes.
+    Pass ``knowledge`` and ``procs`` when calling for many apps so each is read once."""
+    if not app.app_path.endswith(".app"):
+        return None, False
+    running = _is_running(Path(app.app_path), procs)
+    knowledge = usage_from_knowledge() if knowledge is None else knowledge
+    signals = [
+        knowledge.get(app.bundle_id),
+        spotlight_last_used(app.app_path),
+        library_last_touched(app.bundle_id, Path(app.app_path).stem),
+    ]
+    dated = [d for d in signals if d is not None]
+    return (max(dated) if dated else None), running
+
+
+def age_label(when: datetime | None, now: datetime | None = None, running: bool = False) -> str:
+    if running:
+        return "running"
     if when is None:
-        return "never"
+        return "no trace"
     now = now or datetime.now(timezone.utc)
     days = (now - when).days
     if days < 1:

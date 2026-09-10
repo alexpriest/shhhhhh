@@ -16,6 +16,8 @@ from shhhhhh.uninstall import (
     human_size,
     last_used,
     plan_uninstall,
+    running_executables,
+    usage_from_knowledge,
     remove_from_plist,
 )
 from shhhhhh.plist import (
@@ -56,7 +58,8 @@ HELP_LINES = [
     "  n  l          notif center / lock       S  B   sound / badge for every app",
     "  u             revert this row           /      filter by name (esc clears)",
     "  a             show / hide Apple system entries (daemons and agents, hidden by default)",
-    "  o             show / hide a Last used column (Spotlight's last-opened date, to spot dead apps)",
+    "  o             show / hide a Last used column: newest of Screen Time usage, Spotlight, and the",
+    "                app's own Library writes; 'running' if it is open now, 'no trace' if nothing was found",
     "  U             uninstall the app under the cursor: the .app plus its Library leftovers go to the Trash",
     "                (reviewed first; Apple software and running apps are refused)",
     "  enter         review and apply          esc    discard staged changes",
@@ -438,7 +441,7 @@ class ShhApp(App):
         ]
         if self.show_last_used:
             label = self.last_used.get(app.bundle_id, "")
-            cells.append(Text(label, style="dim" if label in ("never", "") else "", justify="right"))
+            cells.append(Text(label, style="dim" if label in ("no trace", "") else ("green" if label == "running" else ""), justify="right"))
         return tuple(cells)
 
     def _populate_table(self) -> None:
@@ -566,8 +569,15 @@ class ShhApp(App):
         self.show_last_used = not self.show_last_used
         if self.show_last_used:
             missing = [a for a in self.apps if a.bundle_id not in self.last_used]
-            for app in missing:
-                self.last_used[app.bundle_id] = age_label(last_used(app.app_path)) if app.app_path.endswith(".app") else ""
+            if missing:
+                knowledge = usage_from_knowledge()
+                procs = running_executables()
+                for app in missing:
+                    if not app.app_path.endswith(".app"):
+                        self.last_used[app.bundle_id] = ""
+                        continue
+                    when, running = last_used(app, knowledge, procs)
+                    self.last_used[app.bundle_id] = age_label(when, running=running)
             table.add_column(Text("Last\nused", justify="right"), key="last_used", width=10)
         else:
             table.remove_column("last_used")
